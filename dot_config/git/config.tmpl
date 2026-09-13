@@ -1,0 +1,68 @@
+# ~/.config/git/config
+#
+# 従来の ~/.gitconfig ではなく XDG の場所に置く。git は
+# $XDG_CONFIG_HOME/git/config を ~/.gitconfig と同等に扱う。
+#
+# user.name / user.email は chezmoi init 時のプロンプトで入力した値が
+# ここに埋め込まれる。マシンごとに別の値を使えるうえ、
+# ソースリポジトリには平文で入らない。
+
+[user]
+	name = {{ .name | quote }}
+	email = {{ .email | quote }}
+
+[init]
+	defaultBranch = main
+
+[ghq]
+	root = ~/src
+
+[core]
+	# excludesfile は書かない。git は $XDG_CONFIG_HOME/git/ignore を既定で読むので
+	# 指定は不要なうえ、ホームの絶対パスを埋め込むと XDG_CONFIG_HOME を
+	# 動かした環境で実在しない場所を指すことになる。
+	#
+	# pager は delta があるときだけ設定する。無条件に書くと、delta を入れられ
+	# なかった環境で git diff / git show / git log -p がすべて
+	# 「delta が無い」で失敗する。lookPath はパッケージ導入スクリプト
+	# (run_once_before_) の後に評価されるので、初回の apply から正しく効く。
+	# 後から delta を入れて chezmoi apply すれば、以下の節は自動で復活する。
+{{- if lookPath "delta" }}
+	pager = delta
+
+[interactive]
+	diffFilter = delta --color-only
+
+[delta]
+	navigate = true
+	line-numbers = true
+	side-by-side = false
+{{- end }}
+
+[merge]
+	conflictstyle = zdiff3
+
+[diff]
+	colorMoved = default
+	algorithm = histogram
+
+[push]
+	autoSetupRemote = true
+
+[pull]
+	ff = only
+
+[fetch]
+	prune = true
+
+[rerere]
+	enabled = true
+
+[alias]
+	st = status --short --branch
+	co = checkout
+	sw = switch
+	br = branch
+	lg = log --graph --abbrev-commit --decorate --format=format:'%C(bold blue)%h%C(reset) %C(bold green)(%ar)%C(reset) %C(white)%s%C(reset) %C(dim white)- %an%C(reset)%C(auto)%d%C(reset)'
+	last = log -1 HEAD --stat
+	unstage = restore --staged

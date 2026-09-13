@@ -1,0 +1,285 @@
+#!/bin/sh
+#
+# パッケージの導入。chezmoi が担当しない唯一の領域。
+#
+# run_once_ なのでスクリプトの内容 (テンプレート展開後) が変わったときだけ再実行される。
+# before_ なので設定ファイルの配置より先に走り、.zshrc が参照するコマンドを先に揃える。
+
+set -eu
+
+log() { printf '\033[1;34m==>\033[0m %s\n' "$*"; }
+warn() { printf '\033[1;33m==>\033[0m %s\n' "$*" >&2; }
+
+{{ if eq .chezmoi.os "darwin" -}}
+# ===========================================================================
+# macOS (Apple Silicon 限定)
+# ===========================================================================
+
+if [ "$(uname -m)" != "arm64" ]; then
+    printf 'このリポジトリは Apple Silicon (arm64) の macOS のみを対象にしています。\n' >&2
+    printf '検出したアーキテクチャ: %s\n' "$(uname -m)" >&2
+    exit 1
+fi
+
+if ! [ -x /opt/homebrew/bin/brew ]; then
+    log 'Homebrew を導入します'
+    NONINTERACTIVE=1 /bin/bash -c \
+        "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+fi
+
+eval "$(/opt/homebrew/bin/brew shellenv)"
+
+# zsh は macOS 標準の /bin/zsh (5.9) をそのまま使う。brew 版を入れると
+# ログインシェルのパスが動き、/etc/shells への sudo 追記が必要になるだけで
+# 得るものが無い。
+log 'Homebrew パッケージを導入します'
+brew bundle --file=/dev/stdin <<'BREWFILE'
+brew "bat"
+brew "bottom"
+brew "chezmoi"
+brew "dust"
+brew "eza"
+brew "fd"
+brew "fzf"
+brew "gh"
+brew "ghq"
+brew "git"
+brew "git-delta"
+brew "hyperfine"
+brew "jq"
+brew "nano"
+brew "ouch"
+brew "procs"
+brew "ripgrep"
+brew "sd"
+brew "starship"
+brew "tmux"
+brew "tokei"
+brew "uv"
+brew "yazi"
+brew "zoxide"
+{{ if not .headless }}cask "ghostty"{{ end }}
+BREWFILE
+
+{{ else if eq .chezmoi.os "linux" -}}
+# ===========================================================================
+# Linux (Ubuntu / Arch)
+#
+# パッケージ名は OS ごとに異なり、さらにディストリのバージョンによって
+# 収録の有無も変わる。そのため「対応表を引く」だけでなく
+# 「パッケージマネージャに実在を問い合わせる」ところまで動的に行う。
+# ここで入らなかったもののうち一部は .chezmoiexternal.toml.tmpl が
+# GitHub Releases から取得する (末尾の案内を参照)。
+# ===========================================================================
+
+if [ -r /etc/os-release ]; then
+    . /etc/os-release
+else
+    printf '/etc/os-release が読めません。対応していないディストリビューションです。\n' >&2
+    exit 1
+fi
+
+case "${ID:-}${ID_LIKE:-}" in
+    *debian*|*ubuntu*) FAMILY=debian ;;
+    *arch*)            FAMILY=arch ;;
+    *) printf '未対応のディストリビューションです: %s\n' "${ID:-unknown}" >&2; exit 1 ;;
+esac
+
+# sudo が使えないコンテナ (root で動作) も想定する。
+if [ "$(id -u)" -eq 0 ]; then
+    SUDO=''
+elif command -v sudo >/dev/null 2>&1; then
+    SUDO='sudo'
+else
+    printf 'root でもなく sudo も使えないため、パッケージを導入できません。\n' >&2
+    exit 1
+fi
+
+# pkg_exists <パッケージ名> : そのパッケージがリポジトリに実在するか
+if [ "$FAMILY" = debian ]; then
+    pkg_exists() { apt-cache show "$1" >/dev/null 2>&1; }
+    # 変数代入は直後のコマンド、つまり sudo 自身にしか付かない。sudo は
+    # env_reset で環境を作り直すため、前置きしても apt-get には届かない。
+    # env を挟んで確実に渡す (sudoers の setenv 可否にも依存しない)。
+    # $SUDO が空 (root) のときは env への前置きとしてそのまま効く。
+    pkg_install() { $SUDO env DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends "$@"; }
+    log 'apt のパッケージ一覧を更新します'
+    $SUDO apt-get update -qq
+else
+    pkg_exists() { pacman -Si "$1" >/dev/null 2>&1; }
+    pkg_install() { $SUDO pacman -S --needed --noconfirm "$@"; }
+    # -Sy だけで個別に -S すると部分アップグレードになり、共有ライブラリの
+    # 不整合を起こす (Arch が公式に非推奨としている)。必ず -Syu で揃える。
+    log 'pacman のパッケージを更新します'
+    $SUDO pacman -Syu --noconfirm
+fi
+
+# 「ツール名:debian でのパッケージ名:arch でのパッケージ名」
+# '-' はそのディストリのリポジトリに無い (または不要な) ことを意味する。
+#
+# fontconfig は GUI 環境でのみ入れる。externals が ~/.local/share/fonts へ
+# フォントを置く以上、それを読む側も揃っていないと fc-cache が走らない。
+#
+# ncurses-term は tmux.conf が指定する tmux-256color の terminfo を含む。
+# これが無いと tmux は "missing or unsuitable terminal" で起動しない。
+# Arch は ncurses 本体が terminfo を丸ごと持っているので不要。
+PACKAGES='
+bat:bat:bat
+bottom:bottom:bottom
+curl:curl:curl
+dust:du-dust:dust
+eza:eza:eza
+fd:fd-find:fd
+{{ if not .headless }}fontconfig:fontconfig:fontconfig
+{{ end -}}
+fzf:fzf:fzf
+gh:gh:github-cli
+ghq:-:-
+git:git:git
+git-delta:git-delta:git-delta
+hyperfine:hyperfine:hyperfine
+jq:jq:jq
+nano:nano:nano
+ncurses-term:ncurses-term:-
+ouch:-:ouch
+procs:-:procs
+ripgrep:ripgrep:ripgrep
+sd:sd:sd
+starship:starship:starship
+tmux:tmux:tmux
+tokei:tokei:tokei
+unzip:unzip:unzip
+uv:uv:uv
+yazi:-:yazi
+zoxide:zoxide:zoxide
+zsh:zsh:zsh
+'
+
+# .chezmoiexternal.toml.tmpl が GitHub Releases から取得するツール。
+# ここに無いものは、パッケージマネージャで入らなかったときに誰も拾わない。
+EXTERNALS=' bottom ghq ouch procs uv yazi '
+
+WANTED=''
+COVERED=''
+UNCOVERED=''
+for entry in $PACKAGES; do
+    tool="${entry%%:*}"
+    rest="${entry#*:}"
+    deb_pkg="${rest%%:*}"
+    arch_pkg="${rest#*:}"
+
+    if [ "$FAMILY" = debian ]; then
+        pkg="$deb_pkg"
+    else
+        pkg="$arch_pkg"
+    fi
+
+    if [ "$pkg" != '-' ] && pkg_exists "$pkg"; then
+        WANTED="$WANTED $pkg"
+        continue
+    fi
+
+    # '-' と書いてあるものは「このディストリには無い」と分かったうえでの記述
+    # なので黙って飛ばす。名前を書いたのに実在しなかったものだけを報告する。
+    case "$EXTERNALS" in
+        *" $tool "*)
+            COVERED="$COVERED $tool"
+            ;;
+        *)
+            if [ "$pkg" != '-' ]; then
+                UNCOVERED="$UNCOVERED $tool"
+            fi
+            ;;
+    esac
+done
+
+if [ -n "$WANTED" ]; then
+    log "パッケージを導入します:$WANTED"
+    # shellcheck disable=SC2086
+    pkg_install $WANTED
+fi
+
+if [ -n "$COVERED" ]; then
+    log "パッケージマネージャに無いため GitHub Releases から取得します:$COVERED"
+    log '  置き場は ~/.local/share/dotfiles/bin (PATH の末尾) です。'
+fi
+
+# ここに挙がるものは externals にも宣言が無い。黙って「入ったつもり」に
+# ならないよう、手当てが要ることをはっきり伝える。
+if [ -n "$UNCOVERED" ]; then
+    warn "次のツールはこの環境では導入できませんでした:$UNCOVERED"
+    warn '  externals にも宣言が無いため、必要なら手で導入してください。'
+    case "$UNCOVERED" in
+        *git-delta*)
+            warn '  git-delta が無い間は ~/.config/git/config が pager 設定を書かないので、'
+            warn '  git diff は delta ではなく既定の表示になります (失敗はしません)。'
+            warn '  後から入れて chezmoi apply すれば delta の表示に切り替わります。'
+            ;;
+    esac
+fi
+
+# ---------------------------------------------------------------------------
+# Debian 系はバイナリ名が衝突回避のため改名されている (bat -> batcat,
+# fd -> fdfind)。正規の名前で呼べるよう ~/.local/bin にリンクを張る。
+# 対応表を持たず「正規名が PATH に無く、別名が存在すれば張る」形にすることで、
+# 将来同種の改名が増えても 1 行の追加で済むようにしている。
+# ---------------------------------------------------------------------------
+mkdir -p "$HOME/.local/bin"
+for pair in bat:batcat fd:fdfind; do
+    canonical="${pair%%:*}"
+    aliased="${pair#*:}"
+    if ! command -v "$canonical" >/dev/null 2>&1 && command -v "$aliased" >/dev/null 2>&1; then
+        log "$canonical -> $(command -v "$aliased") のリンクを張ります"
+        ln -sfn "$(command -v "$aliased")" "$HOME/.local/bin/$canonical"
+    fi
+done
+
+# ---------------------------------------------------------------------------
+# chezmoi 自身を PATH に残す
+#
+# get.chezmoi.io は既定で「実行したディレクトリの bin/」にバイナリを置くだけで、
+# そこは恒久的な PATH ではない。放置すると後日 `chezmoi update` を実行できなくなる。
+# macOS は Brewfile の brew "chezmoi" が担当するが、Linux には相当する仕組みが
+# 無いのでここで用意する。
+#
+# Arch には extra/chezmoi があるのでそれを使う。Ubuntu には収録が無いので、
+# 今まさに動いているバイナリを ~/.local/bin へ複製する。chezmoi が
+# CHEZMOI_EXECUTABLE でその絶対パスを渡してくれるため、ダウンロードし直さずに
+# 済み、ブートストラップに使った版と確実に一致する。
+# ---------------------------------------------------------------------------
+chezmoi_target="$HOME/.local/bin/chezmoi"
+if [ "$FAMILY" = arch ] && pkg_exists chezmoi; then
+    log 'chezmoi を導入します'
+    pkg_install chezmoi
+elif [ -z "${CHEZMOI_EXECUTABLE:-}" ] || [ ! -x "$CHEZMOI_EXECUTABLE" ]; then
+    warn 'chezmoi 自身のパスを特定できませんでした。'
+    warn "後で chezmoi update を使うには $chezmoi_target に配置してください。"
+elif [ "$CHEZMOI_EXECUTABLE" = "$chezmoi_target" ]; then
+    log "chezmoi は既に $chezmoi_target にあります"
+else
+    # 同名の既存バイナリが実行中でも壊さないよう、一時ファイル経由で差し替える。
+    log "chezmoi を $chezmoi_target へ複製します"
+    cp "$CHEZMOI_EXECUTABLE" "$chezmoi_target.new"
+    chmod 755 "$chezmoi_target.new"
+    mv -f "$chezmoi_target.new" "$chezmoi_target"
+fi
+
+{{ if not .headless -}}
+# ---------------------------------------------------------------------------
+# ターミナルエミュレータ (GUI 環境のみ)
+# Ubuntu には公式の apt パッケージが無いため導入しない。
+# ---------------------------------------------------------------------------
+if [ "$FAMILY" = arch ]; then
+    if pkg_exists ghostty; then
+        log 'Ghostty を導入します'
+        pkg_install ghostty
+    fi
+else
+    warn 'Ghostty には公式の apt パッケージがありません。設定ファイルのみ配置します。'
+    warn '本体は https://ghostty.org/docs/install から手動で導入してください。'
+fi
+{{ end -}}
+
+{{ end -}}
+
+log 'パッケージの導入が完了しました'

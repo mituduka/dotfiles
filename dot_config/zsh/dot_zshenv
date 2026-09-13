@@ -1,0 +1,71 @@
+# $ZDOTDIR/.zshenv
+#
+# 全ての zsh (対話・非対話・スクリプト) で読まれる。
+#
+# ここには環境変数だけを置く。シェルの挙動設定 (history や setopt) は
+# .zshrc に置くこと。macOS の /etc/zshrc が .zshenv の「後」に読まれ、
+# HISTFILE / HISTSIZE / SAVEHIST / BEEP を無条件に上書きしてくるため、
+# ここに書いても効かない。
+
+# ~/.zshenv 経由で来た場合と /etc/zshenv 経由で来た場合の二重読み込みを防ぐ。
+[[ -n "${_DOTFILES_ZSHENV_LOADED:-}" ]] && return
+typeset -g _DOTFILES_ZSHENV_LOADED=1
+
+# ===============================================
+# XDG Base Directory
+#
+# 継承した値を尊重せず固定する。chezmoi は配置先をソース名から決めるので、
+# このリポジトリが管理する設定は XDG_CONFIG_HOME の値に関わらず必ず
+# ~/.config 配下に置かれる。ここで別の場所を指すと、設定が実在する場所と
+# ツールが探す場所が食い違う。~/.zshenv が ZDOTDIR を固定しているのも同じ理由。
+# ===============================================
+export XDG_CONFIG_HOME=${HOME}/.config
+export XDG_CACHE_HOME=${HOME}/.cache
+export XDG_DATA_HOME=${HOME}/.local/share
+export XDG_STATE_HOME=${HOME}/.local/state
+
+# ===============================================
+# path
+#
+# このファイルは zsh を起動するたびに読まれるので、素朴に前置きしていくと
+# 入れ子のシェルでエントリが増え続ける。typeset -U で重複を落とす
+# (最初に現れたものが残る)。
+#
+# 末尾の dotfiles/bin は、パッケージマネージャに無かったツールを
+# GitHub Releases から入れる置き場 (.chezmoiexternal.toml.tmpl を参照)。
+# PATH の最後に置くことで「apt / pacman にあればそちらを使い、無ければ
+# ここが使われる」という優先順位になる。~/.local/bin に混ぜてはいけない。
+# ===============================================
+typeset -U path PATH
+path=(
+    /usr/local/sbin
+    "${HOME}/.local/bin"
+    $path
+    "${XDG_DATA_HOME}/dotfiles/bin"
+)
+
+# ===============================================
+# lang
+#
+# LC_ALL は全カテゴリを固定してしまい、`LC_TIME=ja_JP.UTF-8 date` のような
+# 一時的な上書きまで無効にするので設定しない。LANG が既定値として全カテゴリに
+# 効き、個別の LC_* だけがそれを上書きする、という本来の優先順位に任せる。
+# (LANGUAGE は gettext 用の「言語コードの一覧」で、en_US:en のように書く。
+#  ロケール名を入れる場所ではないため使わない。)
+# ===============================================
+export LANG="en_US.UTF-8"
+export LC_CTYPE="${LANG}"
+
+# ===============================================
+# editor
+#
+# nano はパッケージ導入スクリプトが入れる。それでも見つからない環境
+# (最小構成のコンテナなど) で EDITOR が壊れたままにならないよう、
+# POSIX が要求する vi まで落とす。
+# ===============================================
+if command -v nano >/dev/null 2>&1; then
+    export EDITOR="nano"
+else
+    export EDITOR="vi"
+fi
+export GIT_EDITOR="${EDITOR}"

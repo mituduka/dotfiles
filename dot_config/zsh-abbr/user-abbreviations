@@ -1,0 +1,5 @@
+abbr ll="ls -l"
+abbr la="ls -l -A"
+abbr lt="ls --tree"
+abbr l="clear && ls"
+abbr gcd='cd "$(ghq list -p | fzf)"'

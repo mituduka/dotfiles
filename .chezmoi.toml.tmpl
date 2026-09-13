@@ -1,0 +1,30 @@
+{{/*
+  初回 chezmoi init 時に一度だけ評価され、~/.config/chezmoi/chezmoi.toml を生成する。
+  ここで決めた値は以降のテンプレートから {{ .headless }} のように参照できる。
+  値を変えたくなったら `chezmoi edit-config` で書き換える。初回のプロンプトから
+  やり直したいときは `chezmoi init --data=false` で聞き直させる。
+*/}}
+{{- /* ヘッドレス判定の既定値。macOS は常に GUI 扱いにする。 */ -}}
+{{- $headlessDefault := false -}}
+{{- if ne .chezmoi.os "darwin" -}}
+{{-   if not (or (env "DISPLAY") (env "WAYLAND_DISPLAY")) -}}
+{{-     $headlessDefault = true -}}
+{{-   end -}}
+{{- end -}}
+
+{{- /*
+     SSH 越しだと GUI マシンでも DISPLAY が空になるため、既定値を示したうえで確認する。
+     macOS では聞かずに GUI 扱いで固定する。
+*/ -}}
+{{- $headless := $headlessDefault -}}
+{{- if ne .chezmoi.os "darwin" -}}
+{{-   $headless = promptBoolOnce . "headless" "ヘッドレス環境ですか (フォントとターミナル設定を入れない)" $headlessDefault -}}
+{{- end -}}
+
+{{- $name := promptStringOnce . "name" "Git user.name" -}}
+{{- $email := promptStringOnce . "email" "Git user.email" -}}
+
+[data]
+    headless = {{ $headless }}
+    name = {{ $name | quote }}
+    email = {{ $email | quote }}

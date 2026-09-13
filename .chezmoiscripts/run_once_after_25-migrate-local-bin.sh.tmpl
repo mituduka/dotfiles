@@ -1,0 +1,42 @@
+{{- if eq .chezmoi.os "linux" -}}
+#!/bin/sh
+#
+# 旧構成の後始末 (Linux のみ)。
+#
+# 以前は GitHub Releases から取ったバイナリを ~/.local/bin に置いていた。
+# ~/.local/bin は PATH の先頭にあるため、apt / pacman で入れた新しい版を
+# バージョン固定した古い版のほうが先に見つかってしまう。置き場を PATH 末尾の
+# ~/.local/share/dotfiles/bin へ移したので、旧い実体を片付ける。
+#
+# chezmoi は「管理対象から外れたファイル」を消さないため、ここで片付ける。
+#
+# 消す条件を三つとも満たしたものだけに限っている。
+#   1. かつて externals が置いていた名前ちょうどであること
+#   2. 通常ファイルであること (自分で張ったシンボリックリンクは残す)
+#   3. 新しい置き場に同名のファイルが既にあること
+#      = externals の取得が成功していて、消しても手元から失われないこと
+#
+# 注意: 条件 1 の名前に一致すれば、このリポジトリが置いたものでなくても消える。
+# たとえば uv の公式インストーラは ~/.local/bin/uv に通常ファイルを置くので、
+# それも対象になる。コマンド自体は新しい置き場のものが引き継ぐが、版は
+# 揃わない (このリポジトリが固定している版になる)。自分で入れた版を使い
+# 続けたい場合は、PATH の前に来る別の場所へ移してから apply すること。
+# 何を消したかは 1 件ずつログに出る。
+
+set -eu
+
+log() { printf '\033[1;34m==>\033[0m %s\n' "$*"; }
+
+OLD_DIR="$HOME/.local/bin"
+NEW_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/dotfiles/bin"
+
+for name in btm ghq uv uvx procs ouch yazi ya; do
+    old="$OLD_DIR/$name"
+    [ -f "$old" ] || continue
+    [ -L "$old" ] && continue
+    [ -f "$NEW_DIR/$name" ] || continue
+
+    log "旧い置き場のバイナリを削除します: $old (新しい実体は $NEW_DIR/$name)"
+    rm -f "$old"
+done
+{{- end -}}

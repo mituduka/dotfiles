@@ -1,0 +1,24 @@
+# ~/.zshenv
+#
+# ZDOTDIR のブートストラップ。zsh が必ず読む数少ないファイルのひとつで、
+# ここで ZDOTDIR を決めておくと、以降の設定を ~/.config/zsh に集められる。
+#
+# 従来は root 所有の /etc/zshenv に書いていた。ただし、そこには難点がある。
+#
+#   - Linux では書き換えに sudo が要る
+#   - macOS のアップデートで消えることがある
+#
+# そこで、ユーザー領域のこのファイルに移した。
+#
+# zsh は /etc/zshenv -> ($ZDOTDIR|$HOME)/.zshenv の順に読む。
+# macOS に既存の /etc/zshenv が残っていても、そちらで ZDOTDIR が確定すれば
+# $ZDOTDIR/.zshenv が直接読まれるだけで、このファイルは読まれない。
+# どちらの経路でも $ZDOTDIR/.zshenv に到達する。
+
+# ZDOTDIR は $HOME/.config/zsh に固定する。${XDG_CONFIG_HOME:-...} にしては
+# いけない。chezmoi はソース名から配置先を決めるため、dot_config/zsh/... は
+# XDG_CONFIG_HOME の値に関わらず必ず ~/.config/zsh に置かれる。ここだけ
+# 継承した XDG_CONFIG_HOME を尊重すると、設定が置かれていない場所を指して
+# .zshrc が一切読まれず、PATH も EDITOR も失われたシェルが黙って起動する。
+export ZDOTDIR="$HOME/.config/zsh"
+[ -f "$ZDOTDIR/.zshenv" ] && . "$ZDOTDIR/.zshenv"

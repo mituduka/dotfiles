@@ -1,0 +1,30 @@
+{{- if not .headless -}}
+{{- if eq .chezmoi.os "linux" -}}
+#!/bin/sh
+#
+# Linux でフォントキャッシュを更新する。
+# macOS は ~/Library/Fonts を自動で走査するため何もしなくてよい。
+#
+# 再実行のきっかけは 2 つある。
+#
+#   1. externals のハッシュ = 取得するフォントが変わったとき
+#   2. fc-cache の有無      = 前回 fc-cache が無くて何もできなかった環境に
+#                             fontconfig が入ったとき
+#
+# 2 が無いと、fc-cache を持たない環境で一度 exit 0 した時点で「実行済み」として
+# 記録され、あとから fontconfig を入れても二度と走らない。
+#
+# externals hash: {{ include ".chezmoiexternal.toml.tmpl" | sha256sum }}
+# fc-cache: {{ if lookPath "fc-cache" }}present{{ else }}absent{{ end }}
+
+set -eu
+
+if ! command -v fc-cache >/dev/null 2>&1; then
+    printf 'fc-cache が見つかりません。フォントキャッシュの更新をスキップします。\n' >&2
+    exit 0
+fi
+
+printf '\033[1;34m==>\033[0m フォントキャッシュを更新します\n'
+fc-cache -f "$HOME/.local/share/fonts"
+{{- end -}}
+{{- end -}}

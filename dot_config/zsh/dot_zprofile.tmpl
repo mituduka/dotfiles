@@ -1,0 +1,9 @@
+# $ZDOTDIR/.zprofile
+#
+# ログインシェルで一度だけ読まれる。
+{{ if eq .chezmoi.os "darwin" }}
+# OrbStack のコマンドライン連携 (docker / orb コマンドなど)
+if [[ -f "$HOME/.orbstack/shell/init.zsh" ]]; then
+  source "$HOME/.orbstack/shell/init.zsh" 2>/dev/null || :
+fi
+{{ end }}

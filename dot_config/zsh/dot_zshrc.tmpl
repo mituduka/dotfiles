@@ -1,0 +1,280 @@
+# $ZDOTDIR/.zshrc
+#
+# 対話シェルでのみ読まれる。読み込み順序には意味があるので、
+# 節の順番を入れ替えるときは各節の注記を確認すること。
+
+# ===============================================
+# Ghostty shell integration
+#
+# 端末側の機能 (プロンプト位置の把握、カレントディレクトリの引き継ぎなど) を
+# 有効にする。他の初期化より先に行う必要がある。
+# ===============================================
+if [[ -n "$GHOSTTY_RESOURCES_DIR" ]]; then
+  source "$GHOSTTY_RESOURCES_DIR/shell-integration/zsh/ghostty-integration"
+fi
+
+{{ if eq .chezmoi.os "darwin" -}}
+# ===============================================
+# Homebrew
+# ===============================================
+if [[ -x /opt/homebrew/bin/brew ]]; then
+  eval "$(/opt/homebrew/bin/brew shellenv)"
+fi
+
+{{ end -}}
+# ===============================================
+# history / shell options
+#
+# ここに置くのには理由がある。macOS の /etc/zshrc は .zshenv より後、
+# この .zshrc より前に読まれ、次の 4 つを無条件に上書きしてくる。
+#
+#     HISTFILE=${ZDOTDIR:-$HOME}/.zsh_history
+#     HISTSIZE=2000
+#     SAVEHIST=1000
+#     setopt BEEP
+#
+# したがって .zshenv でどう設定しても効かない。/etc/zshrc の後に読まれる
+# この位置で設定し直す必要がある。
+#
+# なお HISTFILE / HISTSIZE / SAVEHIST / LISTMAX はいずれも zsh が自分で読む
+# シェル変数であり、export してはいけない。とくに HISTFILE を export すると
+# bash も同じ値を見るため、zsh から起動した bash が zsh の履歴ファイルへ
+# 追記し、extended_history の形式に生の行が混ざる。
+# ===============================================
+HISTFILE=${XDG_STATE_HOME:-$HOME/.local/state}/zsh/history
+[[ -d "${HISTFILE:h}" ]] || mkdir -p "${HISTFILE:h}"
+
+# メモリに保持する履歴の件数。
+# zsh は「メモリにある分」しか履歴ファイルに書かないため、HISTSIZE が
+# SAVEHIST より小さいと SAVEHIST を大きくしても意味がない。
+# (旧設定は HISTSIZE=1000 / SAVEHIST=100000 で、実際には 1000 件しか
+#  残らない状態だった。) 両方を揃える。
+HISTSIZE=100000
+# 履歴ファイルに保存する履歴の件数
+SAVEHIST=100000
+
+# 開始と終了を記録
+setopt extended_history
+# ヒストリに追加されるコマンド行が古いものと同じなら古いものを削除
+# (hist_ignore_dups を包含するので、そちらは設定しない)
+setopt hist_ignore_all_dups
+# スペースで始まるコマンド行はヒストリリストから削除
+setopt hist_ignore_space
+# ヒストリを呼び出してから実行する間に一旦編集可能
+setopt hist_verify
+# 余分な空白は詰めて記録
+setopt hist_reduce_blanks
+# 古いコマンドと同じものは無視
+setopt hist_save_no_dups
+# history コマンドは履歴に登録しない
+setopt hist_no_store
+# history 共有
+setopt share_history
+
+# zsh の補完候補が画面から溢れ出る時、それでも表示するか確認
+LISTMAX=50
+# 補完候補を詰めて表示
+setopt list_packed
+# ファイル種別記号を補完候補の末尾に表示しない
+unsetopt list_types
+# ビープを鳴らさない (/etc/zshrc の setopt BEEP を打ち消す)
+unsetopt beep
+# バックグラウンドジョブの優先度(ionice)を bash と同じ挙動に
+unsetopt bg_nice
+
+{{ if eq .chezmoi.os "darwin" -}}
+# ===============================================
+# fpath
+#
+# compinit は「その時点の fpath」を走査して補完定義を集め、結果を
+# zcompdump に書き出す。したがって fpath への追加は compinit より前で
+# なければならず、後ろに書くと 1 つも登録されない。
+# (brew shellenv が追加する share/zsh/site-functions とは別ディレクトリで、
+#  zsh-completions formula の 180 個ほどの定義がこちらに入っている。)
+# ===============================================
+if type brew &>/dev/null; then
+  FPATH="$(brew --prefix)/share/zsh-completions:$FPATH"
+fi
+
+{{ end -}}
+# ===============================================
+# completion
+#
+# プラグインより先に compinit を済ませる。zsh-abbr が compinit 済みを
+# 前提にしているため、この順序は入れ替えられない。
+#
+# -C は zcompdump の鮮度チェックを省いて起動を速くする代わり、新しく入れた
+# コマンドの補完がキャッシュを消すまで出てこない。出ないときは
+#   rm "${XDG_CACHE_HOME:-$HOME/.cache}/zsh/zcompdump" && exec zsh
+# ===============================================
+ZSH_COMPDUMP="${XDG_CACHE_HOME:-$HOME/.cache}/zsh/zcompdump"
+[[ -d "${ZSH_COMPDUMP:h}" ]] || mkdir -p "${ZSH_COMPDUMP:h}"
+
+autoload -Uz compinit
+compinit -C -d "$ZSH_COMPDUMP"
+
+# menu select
+zstyle ':completion:*' menu select
+
+# ===============================================
+# plugins
+#
+# 3 OS で同じ場所から読めるよう、パッケージマネージャではなく
+# chezmoi の externals が git clone したものを使う
+# (.chezmoiexternal.toml.tmpl を参照)。
+#
+# 順序:
+#   1. zsh-abbr              compinit の後でなければならない
+#   2. zsh-autosuggestions
+#   3. zsh-syntax-highlighting  必ず最後。これより後に読むと
+#                               他プラグインの入力フックを拾えなくなる
+# ===============================================
+# zsh-abbr v6 が内包する zsh-job-queue は、キューの置き場を
+# ${TMPDIR:-/tmp}/zsh-job-queue に決め打ちする。TMPDIR がユーザ固有でない
+# Linux では全ユーザ共有になり、最初に zsh を起動した人が 0755 で作った
+# ディレクトリに 2 人目が書けず、起動のたびに permission denied を吐いて
+# 略語が 1 つも展開されなくなる (sudo -i のあと自分に戻るだけで踏む)。
+# 置き場を明示してユーザ固有にする。zsh-abbr を読む前でなければ効かない。
+export JOB_QUEUE_TMPDIR="${XDG_CACHE_HOME:-$HOME/.cache}/zsh-job-queue"
+
+ZSH_PLUGIN_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/zsh/plugins"
+
+() {
+  local plugin
+  for plugin in \
+    "$ZSH_PLUGIN_DIR/zsh-abbr/zsh-abbr.zsh" \
+    "$ZSH_PLUGIN_DIR/zsh-autosuggestions/zsh-autosuggestions.zsh" \
+    "$ZSH_PLUGIN_DIR/zsh-syntax-highlighting/zsh-syntax-highlighting.zsh"
+  do
+    [[ -r "$plugin" ]] && source "$plugin"
+  done
+}
+
+# ===============================================
+# alias
+#
+# 略語 (abbr) は $XDG_CONFIG_HOME/zsh-abbr/user-abbreviations で管理する。
+# .zshrc で abbr を定義すると起動のたびに同ファイルへ書き込みが走るため、
+# ここには置かない。
+#
+# この設定は 3 つの OS で共有されるため、ツールが入っていないマシンでも
+# 壊れないよう存在チェックで包む。eza が無ければ本物の ls がそのまま残る
+# (略語のうち `lt` だけは eza 専用の --tree を使うので動かなくなる)。
+# ===============================================
+if command -v eza >/dev/null 2>&1; then
+  alias ls='eza -F --icons --git --group-directories-first'
+fi
+
+# ===============================================
+# zoxide (ディレクトリジャンプ)
+#
+# `z <部分一致>` で頻度と最終使用時刻から目的のディレクトリへ飛ぶ。
+# `zi` は候補を fzf で選ばせる。
+# ===============================================
+if command -v zoxide >/dev/null 2>&1; then
+  eval "$(zoxide init zsh)"
+fi
+
+# ===============================================
+# fzf
+#
+# Ctrl-R  履歴検索
+# Ctrl-T  カレント以下のファイルを挿入
+# Alt-C   カレント以下のディレクトリへ cd
+# ===============================================
+if command -v fzf >/dev/null 2>&1; then
+  # fzf 0.48 以降は `fzf --zsh` がキーバインドと補完をまとめて出力する。
+  # それ以前の版 (Debian 系の古いパッケージなど) は個別ファイルを読む。
+  #
+  # ここで `source <(fzf --zsh)` の成否を見てはいけない。source の終了
+  # コードは「読み込んだ内容の最後のコマンドの結果」であり、fzf --zsh が
+  # 失敗して出力が空でも 0 を返すため、古い fzf でもフォールバックに
+  # 落ちずキーバインドが一切設定されないまま通過してしまう。
+  # 出力をいったん受けて、中身の有無で判定する。
+  #
+  # 読み込む側の 2>/dev/null は、どちらの経路でも外さないこと。fzf の初期化は
+  # 現在の setopt を一通り走査して保存・復元するが、その中には端末が無いと変更
+  # できない zle が含まれる。TTY の無い対話シェル (docker exec や CI など) では
+  # "can't change option: zle" が出る。fzf 自身も同種の setopt を
+  # 2>/dev/null 付きで書いており、抑止するのが上流の流儀。
+  _fzf_init="$(fzf --zsh 2>/dev/null)"
+  if [[ -n "$_fzf_init" ]]; then
+    eval "$_fzf_init" 2>/dev/null
+  else
+    () {
+      # 打ち切りの判定に source の終了コードを使わないこと。数行上に書いた
+      # とおり source が返すのは「読み込んだ内容の最後のコマンドの結果」で、
+      # 読み込めたかどうかではない。fzf の初期化は末尾が bindkey / zle -N な
+      # ので、TTY の無い対話シェルでは非ゼロを返しうる。&& で繋ぐと打ち切れず
+      # 2 つ目まで読んで同じウィジェットを二重に定義する。読めたかどうかだけで
+      # 判断する。
+      local f
+      for f in \
+        /usr/share/doc/fzf/examples/key-bindings.zsh \
+        /usr/share/fzf/key-bindings.zsh
+      do
+        if [[ -r "$f" ]]; then
+          source "$f" 2>/dev/null
+          break
+        fi
+      done
+      for f in \
+        /usr/share/doc/fzf/examples/completion.zsh \
+        /usr/share/fzf/completion.zsh
+      do
+        if [[ -r "$f" ]]; then
+          source "$f" 2>/dev/null
+          break
+        fi
+      done
+    }
+  fi
+  unset _fzf_init
+
+  if command -v fd >/dev/null 2>&1; then
+    export FZF_DEFAULT_COMMAND='fd --type f --hidden --follow --exclude .git'
+    export FZF_CTRL_T_COMMAND="$FZF_DEFAULT_COMMAND"
+    export FZF_ALT_C_COMMAND='fd --type d --hidden --follow --exclude .git'
+  fi
+fi
+
+# ===============================================
+# keybindings
+#
+# Option + 左右矢印は Ghostty の既定では esc:b / esc:f (単語移動) だが、
+# それだと tmux の M-Left / M-Right によるペイン移動が効かないため、
+# ghostty 側で本来の CSI シーケンスを送るよう戻してある。
+# その結果ここで拾えるようになるので、単語移動を割り当て直す。
+#
+# tmux の中では tmux が先に受け取るため、ペイン移動が優先される。
+# ===============================================
+bindkey '\e[1;3D' backward-word
+bindkey '\e[1;3C' forward-word
+
+# ===============================================
+# yazi (ファイラ)
+#
+# yazi を抜けたときのディレクトリへ cd する。yazi 本体は cd できないので、
+# 終了時のパスを一時ファイル経由で受け取る公式の方法を使う。
+# ===============================================
+if command -v yazi >/dev/null 2>&1; then
+  function y() {
+    local tmp cwd
+    tmp="$(mktemp -t yazi-cwd.XXXXXX)"
+    yazi "$@" --cwd-file="$tmp"
+    if cwd="$(command cat -- "$tmp")" && [[ -n "$cwd" && "$cwd" != "$PWD" ]]; then
+      builtin cd -- "$cwd"
+    fi
+    rm -f -- "$tmp"
+  }
+fi
+
+# ===============================================
+# Starship (プロンプト)
+#
+# テーマは Gruvbox Rainbow preset。Nerd Font が必要なので、
+# 記号が □ になる場合はターミナルのフォント設定を確認すること。
+# ===============================================
+if command -v starship >/dev/null 2>&1; then
+  eval "$(starship init zsh)"
+fi

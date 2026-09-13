@@ -1,0 +1,45 @@
+# Ghostty
+#
+# フォントは chezmoi の externals が HackGen の Releases から取得する
+# (.chezmoiexternal.toml.tmpl を参照)。記号が □ になる場合はまず
+# `chezmoi apply --refresh-externals` でフォントが入っているか確認する。
+
+font-family = HackGenConsoleNF-Regular
+font-size = 17
+
+shell-integration = zsh
+shell-integration-features = ssh-env
+
+bell-features = no-attention,no-title
+
+# Option + 左右矢印
+#
+# Ghostty は既定で alt+arrow_left / alt+arrow_right を esc:b / esc:f
+# (シェルの単語移動) に割り当てており、そのままでは tmux に M-Left /
+# M-Right が届かず、ペイン移動が効かない。上下の矢印には既定の割り当てが
+# 無いため、左右だけを本来の CSI シーケンスに戻す。
+#
+# これによりシェルでの単語移動は失われるので、$ZDOTDIR/.zshrc で
+# \e[1;3D / \e[1;3C を backward-word / forward-word に割り当て直している。
+keybind = alt+arrow_left=csi:1;3D
+keybind = alt+arrow_right=csi:1;3C
+
+scrollback-limit = 100000
+
+{{ if eq .chezmoi.os "darwin" -}}
+background-opacity = 0
+background-blur = macos-glass-regular
+
+macos-titlebar-style = tabs
+macos-non-native-fullscreen = true
+macos-option-as-alt = true
+
+quick-terminal-position = center
+quick-terminal-size = 90%,90%
+quick-terminal-screen = mouse
+quick-terminal-animation-duration = 0
+
+keybind = global:ctrl+enter=toggle_quick_terminal
+{{- else -}}
+background-opacity = 0.95
+{{- end }}

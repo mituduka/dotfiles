@@ -1,0 +1,14 @@
+{{/*
+  ここに列挙したターゲットパスは apply されない。
+  ソースリポジトリ自身のファイル (README など) と、環境に不要な設定を除外する。
+*/}}
+README.md
+LICENSE
+docs
+scripts
+
+{{ if .headless -}}
+{{/* ヘッドレス環境ではターミナルエミュレータの設定を置かない。
+     フォントは .chezmoiexternal.toml.tmpl 側でも条件分岐している。 */ -}}
+.config/ghostty
+{{ end -}}

@@ -1,0 +1,251 @@
+{{- /*
+  外部リソースの宣言。chezmoi apply / update がこの宣言に従って取得・展開する。
+  refreshPeriod を過ぎたものだけが再取得されるため、apply は繰り返し実行して安全。
+
+  バージョンを固定している項目は、更新時にこのファイルの値を書き換える。
+  そのとき checksum.sha256 も併せて差し替えること (下の「チェックサム」参照)。
+  手で書き換えず scripts/update-externals.sh を使う (docs/chezmoi.md を参照)。
+  `chezmoi apply --refresh-externals` で refreshPeriod を無視した再取得ができる。
+*/ -}}
+
+{{- /* Rust 製 CLI の Releases はターゲットトリプルで命名されている。 */ -}}
+{{- $rustArch := "x86_64" -}}
+{{- if eq .chezmoi.arch "arm64" -}}{{- $rustArch = "aarch64" -}}{{- end -}}
+{{- $arm := eq .chezmoi.arch "arm64" -}}
+
+{{- /* バージョン固定 */ -}}
+{{- $hackgenVersion := "v2.10.0" -}}
+{{- $bottomVersion := "0.14.9" -}}
+{{- $ghqVersion := "v1.10.1" -}}
+{{- $procsVersion := "v0.14.12" -}}
+{{- $ouchVersion := "0.8.2" -}}
+{{- $uvVersion := "0.12.13" -}}
+{{- $yaziVersion := "v26.9.1" -}}
+
+{{- /*
+     チェックサム
+     ------------
+     ダウンロードした実体を chezmoi が検証する。値が合わなければ apply が失敗する。
+     アーカイブ単位の値なので、同じアーカイブから複数のファイルを取り出す項目
+     (uv/uvx、yazi/ya) では同じ値を使う。
+
+     バージョンを上げたときは次のようにして両アーキテクチャ分を取り直す。
+
+       curl -fsSL <url> | shasum -a 256
+*/ -}}
+{{- $bottomSha := "e0c325829e8bdcea25a8a7651da05dbb6f1fc109ac5d2f0187867d3d5d9c0df8" -}}
+{{- $ghqSha    := "32e380aa8ac76fdd58758cc06174d9ee5db7270bd0cbcc18138b5d36def91b6b" -}}
+{{- $uvSha     := "745765a3b6e360ad76743599ae5c42e9278c7edf8bbff9fc76d05bf2623a04dd" -}}
+{{- $procsSha  := "81964faf9d5cd0e9f399d5d0954fb6fe4d4d9f7d3cbec4507633df5a45b11713" -}}
+{{- $ouchSha   := "c8cad519117939a2bb7dbe54373f2af0d73295693e51c2043e9f7ef5e6261a53" -}}
+{{- $yaziSha   := "a02fe91d3304294048c681f010f1100856872a4e98ecf6927328e888d40a6ad2" -}}
+{{- $hackgenSha := "f8abd483d5edfad88a78ed511978f43c83b43c48e364aa29ebe4a68217474428" -}}
+{{- if $arm -}}
+{{-   $bottomSha = "a6a0a0dda426b31b2c72e15a26c7e97c2224aafdd66f60632e34ee464a64ec8f" -}}
+{{-   $ghqSha    = "7ed154f62751e91c8a2d415280caeeba3d114050d01e39f3d0f4aa1be15f3954" -}}
+{{-   $uvSha     = "2eaa5d94f5db7b3a1a092156b9420459e42ab0217d917fe74a876309cef9b5e9" -}}
+{{-   $procsSha  = "74b4f82acc6fe553cbd5af20ba0baac420b42bef9bb0cbb38fef14b8317d9f91" -}}
+{{-   $ouchSha   = "fd863591b981672f3e97035dcef6ac84ea178546a129f953d0495a8d1d3f9453" -}}
+{{-   $yaziSha   = "02807f08d6b589b65b7516a4e259d83f5995d7a23bb12b3a155141385b370b3a" -}}
+{{- end -}}
+
+# ---------------------------------------------------------------------------
+# zsh プラグイン
+#
+# OS のパッケージマネージャに頼らず git clone で統一する。これにより
+# .zshrc の source 先が 3 OS で完全に同一になる。
+# zsh-abbr は zsh-job-queue をサブモジュールとして内包する (下記参照)。
+# ---------------------------------------------------------------------------
+
+[".local/share/zsh/plugins/zsh-syntax-highlighting"]
+    type = "git-repo"
+    url = "https://github.com/zsh-users/zsh-syntax-highlighting.git"
+    refreshPeriod = "168h"
+    [".local/share/zsh/plugins/zsh-syntax-highlighting".clone]
+        args = ["--depth", "1"]
+    [".local/share/zsh/plugins/zsh-syntax-highlighting".pull]
+        args = ["--ff-only"]
+
+[".local/share/zsh/plugins/zsh-autosuggestions"]
+    type = "git-repo"
+    url = "https://github.com/zsh-users/zsh-autosuggestions.git"
+    refreshPeriod = "168h"
+    [".local/share/zsh/plugins/zsh-autosuggestions".clone]
+        args = ["--depth", "1"]
+    [".local/share/zsh/plugins/zsh-autosuggestions".pull]
+        args = ["--ff-only"]
+
+# zsh-abbr v6 は zsh-job-queue を「サブモジュールとして自身の配下に」持つことを
+# 前提に書かれている (zsh-abbr.zsh が ${ABBR_SOURCE_PATH}/zsh-job-queue/ を
+# 直接 source し、無ければ起動時にエラーを出す)。兄弟として並べても動かないため、
+# 必ず --recurse-submodules で取得する。
+[".local/share/zsh/plugins/zsh-abbr"]
+    type = "git-repo"
+    url = "https://github.com/olets/zsh-abbr.git"
+    refreshPeriod = "168h"
+    [".local/share/zsh/plugins/zsh-abbr".clone]
+        args = ["--depth", "1", "--branch", "v6", "--recurse-submodules", "--shallow-submodules"]
+    [".local/share/zsh/plugins/zsh-abbr".pull]
+        args = ["--ff-only", "--recurse-submodules"]
+
+# ---------------------------------------------------------------------------
+# tmux plugin manager
+#
+# TPM 配下のプラグイン本体は TPM 自身に任せる
+# (run_onchange_after_30-tmux-plugins.sh が install_plugins を呼ぶ)。
+# ---------------------------------------------------------------------------
+
+[".config/tmux/plugins/tpm"]
+    type = "git-repo"
+    url = "https://github.com/tmux-plugins/tpm.git"
+    refreshPeriod = "168h"
+    [".config/tmux/plugins/tpm".clone]
+        args = ["--depth", "1"]
+    [".config/tmux/plugins/tpm".pull]
+        args = ["--ff-only"]
+
+# ---------------------------------------------------------------------------
+# Claude Code の個人 Skills
+#
+# 元 Gist から直接取得する。URL にはリビジョン (Gist のコミット SHA) を含めて
+# 固定してある。`raw/SKILL.md` のままだと第三者の Gist の最新版が
+# refreshPeriod ごとに黙って降ってきて、それを Claude Code が指示として読む。
+# 更新するときは新しいリビジョンを確認してから URL を書き換える。
+#
+#   curl -fsSL https://api.github.com/gists/<gist id> | jq -r '.history[0].version'
+#
+# 2 つの Skill は skills/ 直下の兄弟である必要がある
+# (cognitive-rhythm-writing が ../japanese-tech-writing/SKILL.md を参照するため)。
+# ---------------------------------------------------------------------------
+
+[".claude/skills/japanese-tech-writing/SKILL.md"]
+    type = "file"
+    url = "https://gist.githubusercontent.com/k16shikano/fd287c3133457c4fd8f5601d34aa817d/raw/8f2d57610a73efc97d743c9b0b0ecb1002e09fa4/SKILL.md"
+    refreshPeriod = "168h"
+    [".claude/skills/japanese-tech-writing/SKILL.md".checksum]
+        sha256 = "ad350e0e6f5630fd94d8ab98a6aee194053b0096fdc944c23e271d6dfa09ee68"
+
+[".claude/skills/cognitive-rhythm-writing/SKILL.md"]
+    type = "file"
+    url = "https://gist.githubusercontent.com/k16shikano/eb2929f13ed19c97188393d297be8432/raw/a3b1e26beced71d582e13314fb6f5b179b023c76/SKILL.md"
+    refreshPeriod = "168h"
+    [".claude/skills/cognitive-rhythm-writing/SKILL.md".checksum]
+        sha256 = "65486e64f33ce2ab03c5db198b1f92e2838e71abfb1a80085d1b405340c11437"
+
+{{ if not .headless -}}
+# ---------------------------------------------------------------------------
+# フォント (GUI 環境のみ)
+#
+# HackGenConsoleNF は Nerd Font パッチ済みの等幅日本語フォント。
+# zip の中身は HackGen_NF_vX.Y.Z/ 配下にフラットに並ぶため stripComponents = 1。
+# ---------------------------------------------------------------------------
+
+{{ $fontDir := "Library/Fonts" -}}
+{{ if eq .chezmoi.os "linux" }}{{ $fontDir = ".local/share/fonts" }}{{ end -}}
+
+["{{ $fontDir }}/HackGenConsoleNF"]
+    type = "archive"
+    url = "https://github.com/yuru7/HackGen/releases/download/{{ $hackgenVersion }}/HackGen_NF_{{ $hackgenVersion }}.zip"
+    exact = true
+    stripComponents = 1
+    include = ["*/HackGenConsoleNF-Regular.ttf", "*/HackGenConsoleNF-Bold.ttf"]
+    refreshPeriod = "8760h"
+    ["{{ $fontDir }}/HackGenConsoleNF".checksum]
+        sha256 = "{{ $hackgenSha }}"
+{{ end -}}
+
+{{ if eq .chezmoi.os "linux" }}
+# ---------------------------------------------------------------------------
+# パッケージマネージャに無いツールを補う置き場 (Linux のみ)
+#
+# 置き場は ~/.local/share/dotfiles/bin で、PATH の「最後」に入れてある
+# ($ZDOTDIR/.zshenv を参照)。したがって
+#
+#   - apt / pacman が同じツールを入れていれば /usr/bin 側が使われる
+#   - 入れていなければここのバイナリが使われる
+#
+# という優先順位になり、「パッケージマネージャを優先し、無いものだけ
+# GitHub Releases で補う」という方針がそのまま PATH で表現される。
+#
+# ここを ~/.local/bin に置くと逆転する。~/.local/bin は PATH の先頭にあるため、
+# pacman で入れた新しい procs を、ここでバージョン固定した古い procs が
+# 常に先に見つかってしまう。分けているのはそのためで、統合してはいけない。
+#
+# ディストリごとの収録差を気にせず全部宣言してよいのも、この優先順位のおかげ。
+# ---------------------------------------------------------------------------
+
+[".local/share/dotfiles/bin/btm"]
+    type = "archive-file"
+    url = "https://github.com/ClementTsang/bottom/releases/download/{{ $bottomVersion }}/bottom_{{ $rustArch }}-unknown-linux-gnu.tar.gz"
+    path = "btm"
+    executable = true
+    refreshPeriod = "720h"
+    [".local/share/dotfiles/bin/btm".checksum]
+        sha256 = "{{ $bottomSha }}"
+
+# ghq は Go 製で、アセット名が Go の GOARCH 表記 (amd64 / arm64) になっている。
+# chezmoi の .chezmoi.arch がちょうど同じ表記なのでそのまま使える。
+[".local/share/dotfiles/bin/ghq"]
+    type = "archive-file"
+    url = "https://github.com/x-motemen/ghq/releases/download/{{ $ghqVersion }}/ghq_linux_{{ .chezmoi.arch }}.zip"
+    path = "ghq_linux_{{ .chezmoi.arch }}/ghq"
+    executable = true
+    refreshPeriod = "720h"
+    [".local/share/dotfiles/bin/ghq".checksum]
+        sha256 = "{{ $ghqSha }}"
+
+[".local/share/dotfiles/bin/uv"]
+    type = "archive-file"
+    url = "https://github.com/astral-sh/uv/releases/download/{{ $uvVersion }}/uv-{{ $rustArch }}-unknown-linux-gnu.tar.gz"
+    path = "uv-{{ $rustArch }}-unknown-linux-gnu/uv"
+    executable = true
+    refreshPeriod = "720h"
+    [".local/share/dotfiles/bin/uv".checksum]
+        sha256 = "{{ $uvSha }}"
+
+# uvx は uv のツール実行用コマンド (uvx ruff のように使う)。
+[".local/share/dotfiles/bin/uvx"]
+    type = "archive-file"
+    url = "https://github.com/astral-sh/uv/releases/download/{{ $uvVersion }}/uv-{{ $rustArch }}-unknown-linux-gnu.tar.gz"
+    path = "uv-{{ $rustArch }}-unknown-linux-gnu/uvx"
+    executable = true
+    refreshPeriod = "720h"
+    [".local/share/dotfiles/bin/uvx".checksum]
+        sha256 = "{{ $uvSha }}"
+
+[".local/share/dotfiles/bin/procs"]
+    type = "archive-file"
+    url = "https://github.com/dalance/procs/releases/download/{{ $procsVersion }}/procs-{{ $procsVersion }}-{{ $rustArch }}-linux.zip"
+    path = "procs"
+    executable = true
+    refreshPeriod = "720h"
+    [".local/share/dotfiles/bin/procs".checksum]
+        sha256 = "{{ $procsSha }}"
+
+[".local/share/dotfiles/bin/ouch"]
+    type = "archive-file"
+    url = "https://github.com/ouch-org/ouch/releases/download/{{ $ouchVersion }}/ouch-{{ $rustArch }}-unknown-linux-gnu.tar.gz"
+    path = "ouch-{{ $rustArch }}-unknown-linux-gnu/ouch"
+    executable = true
+    refreshPeriod = "720h"
+    [".local/share/dotfiles/bin/ouch".checksum]
+        sha256 = "{{ $ouchSha }}"
+
+[".local/share/dotfiles/bin/yazi"]
+    type = "archive-file"
+    url = "https://github.com/sxyazi/yazi/releases/download/{{ $yaziVersion }}/yazi-{{ $rustArch }}-unknown-linux-gnu.zip"
+    path = "yazi-{{ $rustArch }}-unknown-linux-gnu/yazi"
+    executable = true
+    refreshPeriod = "720h"
+    [".local/share/dotfiles/bin/yazi".checksum]
+        sha256 = "{{ $yaziSha }}"
+
+[".local/share/dotfiles/bin/ya"]
+    type = "archive-file"
+    url = "https://github.com/sxyazi/yazi/releases/download/{{ $yaziVersion }}/yazi-{{ $rustArch }}-unknown-linux-gnu.zip"
+    path = "yazi-{{ $rustArch }}-unknown-linux-gnu/ya"
+    executable = true
+    refreshPeriod = "720h"
+    [".local/share/dotfiles/bin/ya".checksum]
+        sha256 = "{{ $yaziSha }}"
+{{ end -}}
