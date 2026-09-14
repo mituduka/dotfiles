@@ -5,7 +5,7 @@ macOS / Ubuntu / Arch Linux の CLI 環境を 1 コマンドで揃えるため�
 | 対象 | 状態 |
 | --- | --- |
 | macOS | Apple Silicon のみ (Intel Mac は非対応) |
-| Ubuntu / Debian | Ubuntu 26.04 LTS で検証 |
+| Ubuntu / Debian | Ubuntu 26.04 LTS と 22.04 LTS で検証 |
 | Arch Linux | pacman で検証 |
 | WSL2 | Ubuntu と同じ手順 (フォントの設定だけ非対応) |
 | アーキテクチャ | x86_64 / aarch64 |

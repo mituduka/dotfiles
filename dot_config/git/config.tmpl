@@ -17,6 +17,9 @@
 [ghq]
 	root = ~/src
 
+{{ $delta := false -}}
+{{- if lookPath "delta" }}{{ $delta = true }}{{ end -}}
+{{- if stat (joinPath .chezmoi.homeDir ".local/share/dotfiles/bin/delta") }}{{ $delta = true }}{{ end -}}
 [core]
 	# excludesfile は書かない。git は $XDG_CONFIG_HOME/git/ignore を既定で読むので
 	# 指定は不要なうえ、ホームの絶対パスを埋め込むと XDG_CONFIG_HOME を
@@ -27,7 +30,11 @@
 	# 「delta が無い」で失敗する。lookPath はパッケージ導入スクリプト
 	# (run_once_before_) の後に評価されるので、初回の apply から正しく効く。
 	# 後から delta を入れて chezmoi apply すれば、以下の節は自動で復活する。
-{{- if lookPath "delta" }}
+	#
+	# PATH だけでなく externals の置き場も見る。apt に git-delta が無い
+	# ディストリではそこへ実体が降りてくるが、その場所は chezmoi を動かして
+	# いるシェルの PATH には入っていないため、lookPath では見つからない。
+{{- if $delta }}
 	pager = delta
 
 [interactive]

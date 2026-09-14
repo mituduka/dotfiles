@@ -102,9 +102,18 @@ ghq|x-motemen/ghq|ghq_linux_@G@.zip|split
 uv|astral-sh/uv|uv-@A@-unknown-linux-gnu.tar.gz|split
 procs|dalance/procs|procs-@V@-@A@-linux.zip|split
 ouch|ouch-org/ouch|ouch-@A@-unknown-linux-gnu.tar.gz|split
-yazi|sxyazi/yazi|yazi-@A@-unknown-linux-gnu.zip|split
+yazi|sxyazi/yazi|yazi-@A@-unknown-linux-musl.zip|split
+delta|dandavison/delta|delta-@V@-@A@-unknown-linux-gnu.tar.gz|split
+dust|bootandy/dust|dust-@V@-@A@-unknown-linux-gnu.tar.gz|split
+eza|eza-community/eza|eza_@A@-unknown-linux-gnu.tar.gz|split
+sd|chmln/sd|sd-@V@-@A@-unknown-linux-musl.tar.gz|split
+starship|starship/starship|starship-@A@-unknown-linux-musl.tar.gz|split
 hackgen|yuru7/HackGen|HackGen_NF_@V@.zip|single
 '
+
+# tokei はここに載せない。v13 以降のリリースにはバイナリが添付されておらず、
+# 最新のタグを見にいっても取得できるアセットが無い。載せると毎回「更新あり」と
+# 出たうえで書き換えに失敗し続ける。実体のある v12.1.2 を手で固定してある。
 
 # --- Claude Code の Skills -------------------------------------------------
 #

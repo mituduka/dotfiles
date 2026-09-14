@@ -157,7 +157,8 @@ zsh:zsh:zsh
 
 # .chezmoiexternal.toml.tmpl が GitHub Releases から取得するツール。
 # ここに無いものは、パッケージマネージャで入らなかったときに誰も拾わない。
-EXTERNALS=' bottom ghq ouch procs uv yazi '
+# 収録の薄い Ubuntu 22.04 で足りなくなるものまで含めてある。
+EXTERNALS=' bottom dust eza ghq git-delta ouch procs sd starship tokei uv yazi '
 
 WANTED=''
 COVERED=''
@@ -202,6 +203,15 @@ fi
 if [ -n "$COVERED" ]; then
     log "パッケージマネージャに無いため GitHub Releases から取得します:$COVERED"
     log '  置き場は ~/.local/share/dotfiles/bin (PATH の末尾) です。'
+    # chezmoi は対象のパス順に適用するので、~/.config/git/config を書き終えた
+    # あとで ~/.local/share/... へバイナリが降りてくる。delta の実体が置かれる
+    # のは git の設定を書いたあとになり、初回だけ pager の節が入らない。
+    case "$COVERED" in
+        *git-delta*)
+            log '  delta は git の設定より後に置かれるため、pager の設定が入るのは'
+            log '  次に chezmoi apply を実行したときです。それまで git diff は既定の表示になります。'
+            ;;
+    esac
 fi
 
 # ここに挙がるものは externals にも宣言が無い。黙って「入ったつもり」に
@@ -209,13 +219,6 @@ fi
 if [ -n "$UNCOVERED" ]; then
     warn "次のツールはこの環境では導入できませんでした:$UNCOVERED"
     warn '  externals にも宣言が無いため、必要なら手で導入してください。'
-    case "$UNCOVERED" in
-        *git-delta*)
-            warn '  git-delta が無い間は ~/.config/git/config が pager 設定を書かないので、'
-            warn '  git diff は delta ではなく既定の表示になります (失敗はしません)。'
-            warn '  後から入れて chezmoi apply すれば delta の表示に切り替わります。'
-            ;;
-    esac
 fi
 
 # ---------------------------------------------------------------------------

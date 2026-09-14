@@ -21,6 +21,13 @@
 {{- $ouchVersion := "0.8.3" -}}
 {{- $uvVersion := "0.12.13" -}}
 {{- $yaziVersion := "v26.9.1" -}}
+{{- /* 以下は Ubuntu 22.04 の apt に収録が無いもの。 */ -}}
+{{- $deltaVersion := "0.19.2" -}}
+{{- $dustVersion := "v1.2.5" -}}
+{{- $ezaVersion := "v0.23.5" -}}
+{{- $sdVersion := "v1.1.0" -}}
+{{- $starshipVersion := "v1.26.0" -}}
+{{- $tokeiVersion := "v12.1.2" -}}
 
 {{- /*
      チェックサム
@@ -38,7 +45,13 @@
 {{- $uvSha     := "745765a3b6e360ad76743599ae5c42e9278c7edf8bbff9fc76d05bf2623a04dd" -}}
 {{- $procsSha  := "81964faf9d5cd0e9f399d5d0954fb6fe4d4d9f7d3cbec4507633df5a45b11713" -}}
 {{- $ouchSha   := "f0664cbb3bf8c5c781637da2c8bb86b4561a8709f7e10ddb1188150e68e619a7" -}}
-{{- $yaziSha   := "a02fe91d3304294048c681f010f1100856872a4e98ecf6927328e888d40a6ad2" -}}
+{{- $yaziSha   := "9b9c39decccf8cb0ff53a7d637d38f8a79d93bbd0099f4ea9c619ef6bb392f5d" -}}
+{{- $deltaSha    := "8e695c5f586a8c53d6c3b01be0b4a422ed218bfed2a56191caebe373a1c18ab2" -}}
+{{- $dustSha     := "64b16f5c10cc4c25d2eaa144e9d2d44b3ed8f72ee63b3bc0a92c85e21e9e0932" -}}
+{{- $ezaSha      := "35c70c5c43c29108075e58b893234c67ef585f0b53a7eaf8e9e7d4eec9f339b4" -}}
+{{- $sdSha       := "02f00f4777d43e8e95b7b8d49e1a0d6e502fed4b8e79c1c8b8063857a30caa2e" -}}
+{{- $starshipSha := "b7c232b0e8249d8e55a40beb79c5c43a7d370f3f9408bd215deb0170daeaadf3" -}}
+{{- $tokeiSha    := "c8c5c4ab9e1ff47e745de70f4af3214078657399fa7a0da0b5f209d780e49978" -}}
 {{- $hackgenSha := "f8abd483d5edfad88a78ed511978f43c83b43c48e364aa29ebe4a68217474428" -}}
 {{- if $arm -}}
 {{-   $bottomSha = "a6a0a0dda426b31b2c72e15a26c7e97c2224aafdd66f60632e34ee464a64ec8f" -}}
@@ -46,7 +59,13 @@
 {{-   $uvSha     = "2eaa5d94f5db7b3a1a092156b9420459e42ab0217d917fe74a876309cef9b5e9" -}}
 {{-   $procsSha  = "74b4f82acc6fe553cbd5af20ba0baac420b42bef9bb0cbb38fef14b8317d9f91" -}}
 {{-   $ouchSha   = "d3f856069f264a9f43128cd90491666a3344f1743f68a3f56ac8735072697a6f" -}}
-{{-   $yaziSha   = "02807f08d6b589b65b7516a4e259d83f5995d7a23bb12b3a155141385b370b3a" -}}
+{{-   $yaziSha   = "dd569daecaae914185f295634109295ccd25c1b42b02eb89a74f651970024f2e" -}}
+{{-   $deltaSha    = "0bfce159a5cddd5feb3d6db4a616d883ff51253ce08ac7ec11cb1d208cfaab9e" -}}
+{{-   $dustSha     = "83b8d5b068bdbfd1952a55c8419e77c413d1c084ce7f7369d28f9be36d66dd6a" -}}
+{{-   $ezaSha      = "40b87ae8628aa2ff0f0d2dc24ab52f689631366385c3da630bae745671fd71ec" -}}
+{{-   $sdSha       = "ec8c93c0533ff21f4851d11566808d4082544baf063d9b96ea77c27e98b7cd99" -}}
+{{-   $starshipSha = "dc30189378d2f2e287384e8a692d3f95ad1df64cf0e8c36aa9201516028aed6b" -}}
+{{-   $tokeiSha    = "ef514fd12cfc3ee2d1725e5ecb866ee1123163004879ec285b22f3323389ebe2" -}}
 {{- end -}}
 
 # ---------------------------------------------------------------------------
@@ -233,8 +252,8 @@
 
 [".local/share/dotfiles/bin/yazi"]
     type = "archive-file"
-    url = "https://github.com/sxyazi/yazi/releases/download/{{ $yaziVersion }}/yazi-{{ $rustArch }}-unknown-linux-gnu.zip"
-    path = "yazi-{{ $rustArch }}-unknown-linux-gnu/yazi"
+    url = "https://github.com/sxyazi/yazi/releases/download/{{ $yaziVersion }}/yazi-{{ $rustArch }}-unknown-linux-musl.zip"
+    path = "yazi-{{ $rustArch }}-unknown-linux-musl/yazi"
     executable = true
     refreshPeriod = "720h"
     [".local/share/dotfiles/bin/yazi".checksum]
@@ -242,10 +261,88 @@
 
 [".local/share/dotfiles/bin/ya"]
     type = "archive-file"
-    url = "https://github.com/sxyazi/yazi/releases/download/{{ $yaziVersion }}/yazi-{{ $rustArch }}-unknown-linux-gnu.zip"
-    path = "yazi-{{ $rustArch }}-unknown-linux-gnu/ya"
+    url = "https://github.com/sxyazi/yazi/releases/download/{{ $yaziVersion }}/yazi-{{ $rustArch }}-unknown-linux-musl.zip"
+    path = "yazi-{{ $rustArch }}-unknown-linux-musl/ya"
     executable = true
     refreshPeriod = "720h"
     [".local/share/dotfiles/bin/ya".checksum]
         sha256 = "{{ $yaziSha }}"
+
+# ---------------------------------------------------------------------------
+# 古いディストリの apt に収録が無いもの
+#
+# Ubuntu 22.04 の apt には delta / dust / eza / sd / starship / tokei が無い。
+# 新しいディストリでは apt / pacman 側が入れるので、そちらが PATH の先に来る。
+# ここに並べておいて困るのは、収録のある環境で使われないバイナリが 1 つ増える
+# ことだけで、上の btm や procs と同じ割り切りである。
+#
+# 配布形式は musl を優先する。glibc 版はビルドに使った環境の glibc より古い
+# システムでは動かず、実際 yazi v26.9.1 の gnu 版は GLIBC_2.39 を要求するため
+# Ubuntu 22.04 (glibc 2.35) では起動しない。musl 版は静的リンクなので
+# ディストリの新旧に左右されない。
+# delta / eza / tokei は aarch64 の musl 版を配っていないので gnu 版を使うが、
+# こちらは要求が GLIBC_2.18 と低く、22.04 でも動くことを確認してある。
+# ---------------------------------------------------------------------------
+
+[".local/share/dotfiles/bin/delta"]
+    type = "archive-file"
+    url = "https://github.com/dandavison/delta/releases/download/{{ $deltaVersion }}/delta-{{ $deltaVersion }}-{{ $rustArch }}-unknown-linux-gnu.tar.gz"
+    path = "delta-{{ $deltaVersion }}-{{ $rustArch }}-unknown-linux-gnu/delta"
+    executable = true
+    refreshPeriod = "720h"
+    [".local/share/dotfiles/bin/delta".checksum]
+        sha256 = "{{ $deltaSha }}"
+
+# dust だけは musl 版を避けている。並列に走査してノードを大量に確保するため、
+# musl の mallocng の遅さがそのまま出る。80,000 ファイルの走査で musl 版は
+# 116.5ms、gnu 版は 22.4ms だった。gnu 版の要求は GLIBC_2.34 で 22.04 (2.35)
+# に収まるので、ここは速いほうを取る。
+[".local/share/dotfiles/bin/dust"]
+    type = "archive-file"
+    url = "https://github.com/bootandy/dust/releases/download/{{ $dustVersion }}/dust-{{ $dustVersion }}-{{ $rustArch }}-unknown-linux-gnu.tar.gz"
+    path = "dust-{{ $dustVersion }}-{{ $rustArch }}-unknown-linux-gnu/dust"
+    executable = true
+    refreshPeriod = "720h"
+    [".local/share/dotfiles/bin/dust".checksum]
+        sha256 = "{{ $dustSha }}"
+
+[".local/share/dotfiles/bin/eza"]
+    type = "archive-file"
+    url = "https://github.com/eza-community/eza/releases/download/{{ $ezaVersion }}/eza_{{ $rustArch }}-unknown-linux-gnu.tar.gz"
+    # eza の書庫だけ、メンバー名が "./eza" と頭に ./ が付く形で記録されている。
+    path = "./eza"
+    executable = true
+    refreshPeriod = "720h"
+    [".local/share/dotfiles/bin/eza".checksum]
+        sha256 = "{{ $ezaSha }}"
+
+[".local/share/dotfiles/bin/sd"]
+    type = "archive-file"
+    url = "https://github.com/chmln/sd/releases/download/{{ $sdVersion }}/sd-{{ $sdVersion }}-{{ $rustArch }}-unknown-linux-musl.tar.gz"
+    path = "sd-{{ $sdVersion }}-{{ $rustArch }}-unknown-linux-musl/sd"
+    executable = true
+    refreshPeriod = "720h"
+    [".local/share/dotfiles/bin/sd".checksum]
+        sha256 = "{{ $sdSha }}"
+
+[".local/share/dotfiles/bin/starship"]
+    type = "archive-file"
+    url = "https://github.com/starship/starship/releases/download/{{ $starshipVersion }}/starship-{{ $rustArch }}-unknown-linux-musl.tar.gz"
+    path = "starship"
+    executable = true
+    refreshPeriod = "720h"
+    [".local/share/dotfiles/bin/starship".checksum]
+        sha256 = "{{ $starshipSha }}"
+
+# tokei は v13 以降、リリースにバイナリが添付されていない。実体があるのは
+# v12.1.2 が最後なので、ここだけ上流の最新ではなくそれを固定している。
+# 収録のあるディストリでは、そちらの新しいほうが PATH の先に来る。
+[".local/share/dotfiles/bin/tokei"]
+    type = "archive-file"
+    url = "https://github.com/XAMPPRocky/tokei/releases/download/{{ $tokeiVersion }}/tokei-{{ $rustArch }}-unknown-linux-gnu.tar.gz"
+    path = "tokei"
+    executable = true
+    refreshPeriod = "720h"
+    [".local/share/dotfiles/bin/tokei".checksum]
+        sha256 = "{{ $tokeiSha }}"
 {{ end -}}

@@ -9,6 +9,7 @@
 - [~/.zshrc をシンボリックリンクにしている](#zshrc-をシンボリックリンクにしている)
 - [履歴と setopt を .zshrc に書く](#履歴と-setopt-を-zshrc-に書く)
 - [外部アセットをチェックサムで固定する](#外部アセットをチェックサムで固定する)
+- [古いディストリでも動く形で配る](#古いディストリでも動く形で配る)
 - [Ghostty の Option + 矢印](#ghostty-の-option--矢印)
 - [tmux の status-interval を 1 にしない](#tmux-の-status-interval-を-1-にしない)
 - [re-add と merge が使えない](#re-add-と-merge-が使えない)
@@ -98,6 +99,22 @@ Claude Code の Skills については、Gist のリビジョン (コミット S
 固定した以上、上流が更新されても自動では追いつかない。そこで `update-externals.sh` は Skills も照合の対象にしてある。リリースと違ってバージョン番号が無いので、Gist の API が返す最新リビジョンと突き合わせる。更新を受け入れるかどうかは人が決めることなので、`--diff` で固定中との差分を読んでから `--write` する、という順序にした。バイナリの更新と違い、ここで受け入れているのは Claude への指示そのものである。
 
 zsh プラグインと TPM は `type = "git-repo"` でブランチを追いかけるので、チェックサムを持たせていない。内容が変わることを前提にした取得方法であり、ハッシュの不一致で失敗することもない。
+
+## 古いディストリでも動く形で配る
+
+Ubuntu 22.04 の apt には `delta` `dust` `eza` `sd` `starship` `tokei` が無い。収録の差はディストリのバージョンでも開くので、`.chezmoiexternal.toml.tmpl` はこの 6 つも GitHub Releases から取る対象にしてある。置き場が PATH の末尾なので、収録のある環境では apt / pacman 側が先に見つかり、ここに並べておいて損をすることはない。
+
+配布形式は gnu 版を既定にして、要求する glibc が 22.04 に収まらないときだけ musl 版にする。glibc 版は、ビルドに使った環境の glibc より古いシステムでは動かない。glibc は古いバイナリを新しいシステムで動かす方向にしか互換性がないためである。実際 yazi v26.9.1 の `-unknown-linux-gnu` 版は `GLIBC_2.39` を要求し、glibc 2.35 の Ubuntu 22.04 では `version 'GLIBC_2.39' not found` で起動しない。musl 版は静的にリンクされているので、この下限を持たない。
+
+musl 版を既定にしないのは、mallocng が遅いからである。`dust` は並列に走査してノードを大量に確保するので差が大きく、80,000 ファイルの走査で musl 版が 116.5ms、gnu 版が 22.4ms だった。ただし差が出るのは確保の多い処理に限られる。`sd` による 30 万行の置換では 1.14 倍にとどまり、`starship` のプロンプト 1 回では musl 版のほうが速かった。
+
+いま musl 版を使っているのは `sd` `starship` `yazi` の 3 つである。`yazi` は上に書いた glibc の下限が理由で、残る 2 つは aarch64 向けに musl 版しか配られていない。x86_64 だけ gnu 版に分けることもできるが、実測した差がこのとおりなので揃えてある。
+
+`delta` `eza` `tokei` の gnu 版は要求が `GLIBC_2.18`、`dust` は `GLIBC_2.34` で、どれも 22.04 で動くことを確認した。
+
+`tokei` はさらに事情が違う。v13 以降のリリースにはバイナリが添付されておらず、実体があるのは 2021 年の v12.1.2 が最後である。そのため `scripts/update-externals.sh` の照合対象からは外してある。載せると毎回「更新あり」と出たうえで、アセットが無いので書き換えにも失敗し続ける。収録のあるディストリでは、そちらの新しい `tokei` が PATH の先に来る。
+
+apt に `git-delta` が無い環境では、`~/.config/git/config` に pager の設定が入るのが 2 回目の `chezmoi apply` になる。chezmoi は対象のパス順に適用するので、`.config/git/config` を書き終えたあとで `.local/share/dotfiles/bin/delta` が置かれるからである。初回に黙って落ちないよう、パッケージ導入スクリプトがそのことを表示する。
 
 ## Ghostty の Option + 矢印
 
