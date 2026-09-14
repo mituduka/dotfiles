@@ -195,13 +195,15 @@ tokei -o json            # JSON で出力
 | `d` / `D` | 削除 (ゴミ箱へ) / 完全に削除 |
 | `a` | 新規作成 (末尾が `/` ならディレクトリ) |
 | `r` | リネーム (拡張子の手前にカーソルが入る) |
-| `.` | 隠しファイルの表示切り替え |
+| `.` | 隠しファイルの表示切り替え (既定で表示にしてある) |
 | `/` | 表示中の一覧をインクリメンタル検索 |
 | `s` / `S` | `fd` でファイル名検索 / `rg` で内容検索 |
 | `Tab` | 選択中のファイルの詳細をポップアップ表示 |
 | `q` | 終了 (このパスへ cd する) |
 | `Q` | cd せずに終了 |
 | `~` または `F1` | ヘルプ (全キーバインドの一覧) |
+
+隠しファイルは `~/.config/yazi/yazi.toml` で最初から表示するようにしてある。`.` で切り替えたぶんはその場限りで、次に起動すると表示に戻る。
 
 ### jq (JSON)
 
@@ -216,6 +218,43 @@ jq -s '.' a.json b.json          # 複数の入力を配列にまとめる
 jq 'keys' file.json              # キーの一覧
 gh pr list --json number,title | jq -r '.[] | "\(.number) \(.title)"'
 ```
+
+### direnv (ディレクトリごとの環境変数)
+
+`.envrc` を置いたディレクトリに入ると、そこに書いた環境変数が読み込まれ、出ると元に戻る。プロジェクトごとに接続先や `PATH` を分けられる。
+
+```sh
+cd ~/src/github.com/me/proj
+echo 'export DATABASE_URL=postgres://localhost/dev' > .envrc
+direnv allow
+```
+
+`.envrc` は任意のシェルコードとして実行されるので、許可するまでは読まれない。中身を書き換えると許可が外れ、`direnv allow` を打ち直すまで無効のままになる。他人のリポジトリを clone したときは、中を読んでから許可する。
+
+| コマンド | 動作 |
+| --- | --- |
+| `direnv allow` | このディレクトリの `.envrc` を許可する |
+| `direnv deny` | 許可を取り消す |
+| `direnv reload` | 読み込み直す |
+| `direnv status` | いま何を読み込んでいるかを見る |
+
+`.envrc` の中では補助関数が使える。
+
+```sh
+PATH_add bin          # ./bin を PATH の先頭に足す
+dotenv                # .env を読み込む
+```
+
+秘密の値を `.envrc` に直接書くと git に入ってしまう。`dotenv` を呼んでおいて、値そのものは git 管理外の `.env` に置くとよい。
+
+uv で作った仮想環境に入るときは、次の 2 行がよい。
+
+```sh
+export VIRTUAL_ENV="$PWD/.venv"
+PATH_add .venv/bin
+```
+
+`source .venv/bin/activate` でも `python` は切り替わるが、`activate` が `PS1` を書き換えるため、ディレクトリに入るたびに `direnv: PS1 cannot be exported` という警告が出る。仮想環境に入っていることは starship が表示するので、`activate` を読む必要はない。
 
 ## git 関連
 

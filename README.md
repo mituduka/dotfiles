@@ -121,6 +121,7 @@ chezmoi cd                # ソースリポジトリへ移動する
 | `ghq` | clone 先を `~/src` 以下に統一する |
 | `jq` | JSON の整形と抽出 |
 | `uv` | Python のパッケージと処理系の管理 |
+| `direnv` | ディレクトリごとに環境変数を出し入れする |
 
 それぞれの使い方は [docs/commands.md](docs/commands.md) を見てほしい。
 
