@@ -155,4 +155,5 @@ chezmoi が新しい設定を配置するだけでは足りず、手で消さな
 
 - 対象は Apple Silicon の macOS だけで、Intel Mac ではパッケージ導入スクリプトが最初に停止する。
 - 以前の構成で `/etc/zshenv` に `ZDOTDIR` を書いていたとしても、残したまま動く。どちらの経路をたどっても `$ZDOTDIR/.zshenv` にたどり着くからである。不要なら root 権限で削除してかまわない。
+- Ubuntu 22.04 の git は 2.34 で、新しめの設定がそのままでは通らない。`merge.conflictstyle` に指定している `zdiff3` は 2.35 から入った値で、知らない値を渡された古い git は警告して既定値に戻るのではなく、その場で終了する。マージも rebase も cherry-pick もできなくなるため、`~/.config/git/config` を生成するときに `git --version` を見て、届かなければ `diff3` に落としている。`push.autoSetupRemote` は 2.37 からで、こちらは知らないキーとして黙って無視される。古い環境では最初の push だけ `git push -u origin HEAD` を打つ。
 - zsh-abbr v6 が内包する zsh-job-queue は、キューの置き場を `${TMPDIR:-/tmp}/zsh-job-queue` に決め打ちしている。`TMPDIR` がユーザごとに分かれていない Linux ではこれが全ユーザ共有になり、最初に zsh を起動した人が作ったディレクトリに 2 人目が書き込めず、略語がひとつも展開されなくなる。`.zshrc` で `JOB_QUEUE_TMPDIR` を指定して、ユーザごとに分けてある。

@@ -39,14 +39,32 @@
 	side-by-side = false
 {{- end }}
 
+# conflictstyle は git のバージョンを見て決める。zdiff3 が使えるのは git 2.35
+# 以降で、それより古い git は知らない値を渡されるとマージ系のコマンドがその場で
+# 終了する。警告して既定値に戻る、という動きではない。Ubuntu 22.04 の git は
+# 2.34 なので、ここに zdiff3 と直接書くと merge も rebase も cherry-pick も
+# できなくなる。2.35 に届かない環境では diff3 に落とす。どちらも衝突箇所に
+# 共通の祖先を出す点は同じで、zdiff3 は両側で一致する行をそこから取り除く。
+{{ $gitVersion := "" -}}
+{{- if lookPath "git" -}}
+{{-   $gitVersion = output "git" "--version" | regexFind `[0-9]+\.[0-9]+\.[0-9]+` -}}
+{{- end -}}
+{{- $conflictStyle := "diff3" -}}
+{{- if $gitVersion -}}
+{{-   if semverCompare ">=2.35.0" $gitVersion -}}
+{{-     $conflictStyle = "zdiff3" -}}
+{{-   end -}}
+{{- end -}}
 [merge]
-	conflictstyle = zdiff3
+	conflictstyle = {{ $conflictStyle }}
 
 [diff]
 	colorMoved = default
 	algorithm = histogram
 
 [push]
+	# autoSetupRemote が効くのは git 2.37 以降。古い git は知らないキーとして
+	# 黙って無視するので、そこでは git push -u origin HEAD を自分で打つ。
 	autoSetupRemote = true
 
 [pull]
