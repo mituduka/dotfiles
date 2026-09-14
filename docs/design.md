@@ -23,7 +23,7 @@
 | --- | --- | --- |
 | `~/.local/bin` | 前 | 自分のスクリプト、`chezmoi` 本体、Debian 系の改名リンク |
 | `/usr/bin` など | 中 | apt / pacman / Homebrew が入れたもの |
-| `~/.local/share/dotfiles/bin` | 後 | GitHub Releases から取ったバイナリ |
+| `~/.local/share/dotfiles/bin` | 後 | GitHub Releases から取ったバイナリ (Linux のみ) |
 
 GitHub Releases から取ったバイナリを末尾に置いているのには理由がある。これを先頭に置くと、pacman が入れた新しい `procs` があっても、このリポジトリでバージョンを固定した古い `procs` のほうが先に見つかってしまう。末尾に置けば、パッケージマネージャが入れたものがあればそちらを使い、無いときだけ Releases 版を使うことになる。
 
