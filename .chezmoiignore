@@ -1,6 +1,9 @@
 {{/*
   ここに列挙したターゲットパスは apply されない。
   ソースリポジトリ自身のファイル (README など) と、環境に不要な設定を除外する。
+
+  任意項目のキー (.zshFunctions など) は、まだ chezmoi init をやり直していない
+  マシンの設定ファイルには無い。既定値は .chezmoidata.toml が持っている。
 */}}
 README.md
 LICENSE
@@ -11,4 +14,10 @@ scripts
 {{/* ヘッドレス環境ではターミナルエミュレータの設定を置かない。
      フォントは .chezmoiexternal.toml.tmpl 側でも条件分岐している。 */ -}}
 .config/ghostty
+{{ end -}}
+
+{{ if not .zshFunctions -}}
+{{/* 自作の zsh 関数を入れない選択をした場合。yazi 連携の y もここに入って
+     いるので、入れないと y は使えなくなる (yazi 本体はそのまま入る)。 */ -}}
+.config/zsh/functions
 {{ end -}}

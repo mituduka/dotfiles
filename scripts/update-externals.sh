@@ -60,6 +60,10 @@ else
     sha256() { shasum -a 256 | cut -d' ' -f1; }
 fi
 
+# Ctrl-C や途中終了で一時ファイルとテンプレートの書きかけを残さない。
+cleanup() { rm -f "$TMPL.new"; }
+trap cleanup EXIT INT TERM
+
 red()    { printf '\033[31m%s\033[0m' "$1"; }
 green()  { printf '\033[32m%s\033[0m' "$1"; }
 yellow() { printf '\033[33m%s\033[0m' "$1"; }
@@ -87,15 +91,36 @@ get_x86() { sed -n 's/^{{- \$'"$1"' *:= "\([^"]*\)" -}}.*/\1/p' "$TMPL" | head -
 get_arm() { sed -n 's/^{{-   \$'"$1"' *= "\([^"]*\)" -}}.*/\1/p' "$TMPL" | head -1; }
 
 # 値を書き換える。桁揃えの空白を壊さないよう、引用符の手前まではそのまま残す。
+#
+# 置換値は上流のタグ名や API が返した SHA なので、こちらが中身を選べない。
+# sed の置換文字列では & が「マッチ全体」、| が区切り文字、\ がエスケープと
+# して働くので、そのまま埋めるとテンプレートが壊れる。先に無害化する。
+sed_escape() { printf '%s' "$1" | sed -e 's/[&|\\]/\\&/g'; }
+
+# 置換が 1 件も起きなかったことを検出する。sed も mv も、何も置換しなくても
+# 成功で終わる。確かめないと「書き換えました」と表示しながら実際には
+# 何も変わっていない、という状態が起きる (変数名を間違えたときなど)。
+apply_sed() { # sed式
+    sed "$1" "$TMPL" > "$TMPL.new" || { rm -f "$TMPL.new"; return 1; }
+    if cmp -s "$TMPL" "$TMPL.new"; then
+        rm -f "$TMPL.new"
+        return 1
+    fi
+    mv "$TMPL.new" "$TMPL"
+}
+
 set_x86() {
-    sed 's|^\({{- \$'"$1"' *:= "\)[^"]*\(" -}}\)|\1'"$2"'\2|' "$TMPL" > "$TMPL.new" && mv "$TMPL.new" "$TMPL"
+    apply_sed 's|^\({{- \$'"$1"' *:= "\)[^"]*\(" -}}\)|\1'"$(sed_escape "$2")"'\2|'
 }
 set_arm() {
-    sed 's|^\({{-   \$'"$1"' *= "\)[^"]*\(" -}}\)|\1'"$2"'\2|' "$TMPL" > "$TMPL.new" && mv "$TMPL.new" "$TMPL"
+    apply_sed 's|^\({{-   \$'"$1"' *= "\)[^"]*\(" -}}\)|\1'"$(sed_escape "$2")"'\2|'
 }
 
 # name | repo | アセット名のパターン | アーキテクチャ別か
-#   @V@ = バージョン (タグそのまま) / @A@ = x86_64|aarch64 / @G@ = amd64|arm64
+#   @V@ = バージョン (タグそのまま)
+#   @A@ = x86_64|aarch64     Rust のターゲットトリプル
+#   @G@ = amd64|arm64        Go の GOARCH
+#   @L@ = linux|arm64        fnm 独自。x86_64 側だけ OS 名で、arm 側は arch 名になる
 TOOLS='
 bottom|ClementTsang/bottom|bottom_@A@-unknown-linux-gnu.tar.gz|split
 ghq|x-motemen/ghq|ghq_linux_@G@.zip|split
@@ -103,6 +128,7 @@ uv|astral-sh/uv|uv-@A@-unknown-linux-gnu.tar.gz|split
 procs|dalance/procs|procs-@V@-@A@-linux.zip|split
 ouch|ouch-org/ouch|ouch-@A@-unknown-linux-gnu.tar.gz|split
 yazi|sxyazi/yazi|yazi-@A@-unknown-linux-musl.zip|split
+fnm|Schniz/fnm|fnm-@L@.zip|split
 delta|dandavison/delta|delta-@V@-@A@-unknown-linux-gnu.tar.gz|split
 dust|bootandy/dust|dust-@V@-@A@-unknown-linux-gnu.tar.gz|split
 eza|eza-community/eza|eza_@A@-unknown-linux-gnu.tar.gz|split
@@ -142,6 +168,7 @@ skill_field() { # path url|sha256
     ' "$TMPL" | sed 's/[^"]*"\([^"]*\)".*/\1/'
 }
 
+# 置換が起きたことを確かめる。awk も mv も、何も置換しなくても成功で終わる。
 set_skill() { # path revision sha
     awk -v path="$1" -v rev="$2" -v sha="$3" '
         /^[ \t]*\[".*\]$/ { blk = $0; sub(/^[ \t]+/, "", blk) }
@@ -152,7 +179,12 @@ set_skill() { # path revision sha
             sub(/"[^"]*"/, "\"" sha "\"")
         }
         { print }
-    ' "$TMPL" > "$TMPL.new" && mv "$TMPL.new" "$TMPL"
+    ' "$TMPL" > "$TMPL.new" || { rm -f "$TMPL.new"; return 1; }
+    if cmp -s "$TMPL" "$TMPL.new"; then
+        rm -f "$TMPL.new"
+        return 1
+    fi
+    mv "$TMPL.new" "$TMPL"
 }
 
 # https://gist.githubusercontent.com/<所有者>/<gist id>/raw/<リビジョン>/<ファイル名>
@@ -162,21 +194,41 @@ skill_url_at() { printf '%s' "$1" | sed 's|/raw/[0-9a-f]*/|/raw/'"$2"'/|'; }
 short() { printf '%.8s' "$1"; }
 
 asset_url() { # repo version pattern arch
-    _a=x86_64; _g=amd64
-    [ "$4" = arm ] && { _a=aarch64; _g=arm64; }
-    _p=$(printf '%s' "$3" | sed -e "s|@V@|$2|g" -e "s|@A@|$_a|g" -e "s|@G@|$_g|g")
+    _a=x86_64; _g=amd64; _l=linux
+    [ "$4" = arm ] && { _a=aarch64; _g=arm64; _l=arm64; }
+    _p=$(printf '%s' "$3" | sed -e "s|@V@|$2|g" -e "s|@A@|$_a|g" -e "s|@G@|$_g|g" -e "s|@L@|$_l|g")
     printf 'https://github.com/%s/releases/download/%s/%s' "$1" "$2" "$_p"
 }
 
-# 取得できなかったときは何も返さない。curl の失敗をパイプで捨てると、空入力の
-# ハッシュ (e3b0c442...) が取得できた値として通ってしまい、--write がそれを
-# テンプレートに書き込んでしまう。
+# 取得できなかったときは何も返さず、終了コード 1 を返す。curl の失敗をパイプで
+# 捨てると、空入力のハッシュ (e3b0c442...) が取得できた値として通ってしまい、
+# --write がそれをテンプレートに書き込んでしまう。
+#
+# 終了コードを返すのが要点である。値だけを見て「記録した sha と違う」と
+# 判定すると、オフラインで実行しただけで全件が「上流がアセットを差し替えた」
+# という最も深刻な警告に化ける。取得できなかったことと、取得できたが違って
+# いたことは、まったく別の事態として扱う。
 remote_sha() {
     _t=$(mktemp)
     if curl -fsSL "$1" -o "$_t" 2>/dev/null && [ -s "$_t" ]; then
         sha256 < "$_t"
+        rm -f "$_t"
+        return 0
     fi
     rm -f "$_t"
+    return 1
+}
+
+# 記録した値と上流の値を突き合わせる。
+#   0 一致 / 1 不一致 / 2 取得できなかった / 3 記録した値が無い
+#
+# 「記録が無い」を一致として扱ってはいけない。get_x86 も remote_sha も
+# 失敗時は空文字を返すので、素朴に = で比べると空 = 空 が成立し、照合が
+# 一度も行われていないのに「最新 / ハッシュ一致」と緑で出る。
+compare_sha() { # 記録した値 URL
+    [ -n "$1" ] || return 3
+    _r=$(remote_sha "$2") || return 2
+    [ "$1" = "$_r" ]
 }
 
 printf '%-9s %-12s %-12s %s\n' tool current latest state
@@ -203,18 +255,33 @@ for entry in $TOOLS; do
 
     need_write=0
     if [ "$cur" = "$latest" ]; then
-        ok=1
-        [ "$(get_x86 "${name}Sha")" = "$(remote_sha "$(asset_url "$repo" "$cur" "$pattern" x86)")" ] || ok=0
+        # 0 一致 / 1 不一致 / 2 取得できなかった / 3 記録が無い のうち、
+        # いちばん重いものを採る。取得できていないのに「差し替えられた」と
+        # 言わないための区別である (compare_sha の注記を参照)。
+        worst=0
+        compare_sha "$(get_x86 "${name}Sha")" "$(asset_url "$repo" "$cur" "$pattern" x86)" || worst=$?
         if [ "$kind" = split ]; then
-            [ "$(get_arm "${name}Sha")" = "$(remote_sha "$(asset_url "$repo" "$cur" "$pattern" arm)")" ] || ok=0
+            compare_sha "$(get_arm "${name}Sha")" "$(asset_url "$repo" "$cur" "$pattern" arm)" || \
+                { rc=$?; [ "$rc" -gt "$worst" ] && worst=$rc; }
         fi
-        if [ "$ok" -eq 1 ]; then
-            printf '%-9s %-12s %-12s %s\n' "$name" "$cur" "$latest" "$(green '最新 / ハッシュ一致')"
-        else
-            printf '%-9s %-12s %-12s %s\n' "$name" "$cur" "$latest" "$(red 'ハッシュ不一致 (上流が差し替えた)')"
-            STALE=$((STALE + 1))
-            need_write=1
-        fi
+        case "$worst" in
+            0)
+                printf '%-9s %-12s %-12s %s\n' "$name" "$cur" "$latest" "$(green '最新 / ハッシュ一致')"
+                ;;
+            1)
+                printf '%-9s %-12s %-12s %s\n' "$name" "$cur" "$latest" "$(red 'ハッシュ不一致 (上流が差し替えた)')"
+                STALE=$((STALE + 1))
+                need_write=1
+                ;;
+            2)
+                printf '%-9s %-12s %-12s %s\n' "$name" "$cur" "$latest" "$(yellow '最新 / アセットを取得できず未照合')"
+                UNKNOWN=$((UNKNOWN + 1))
+                ;;
+            *)
+                printf '%-9s %-12s %-12s %s\n' "$name" "$cur" "$latest" "$(red "テンプレートに \$${name}Sha がありません")"
+                UNKNOWN=$((UNKNOWN + 1))
+                ;;
+        esac
     else
         printf '%-9s %-12s %-12s %s\n' "$name" "$cur" "$latest" "$(yellow '更新あり')"
         CHANGED=$((CHANGED + 1))
@@ -224,18 +291,33 @@ for entry in $TOOLS; do
 
     [ "$WRITE" -eq 1 ] && [ "$need_write" -eq 1 ] || continue
 
-    sha_x86=$(remote_sha "$(asset_url "$repo" "$latest" "$pattern" x86)")
+    sha_x86=$(remote_sha "$(asset_url "$repo" "$latest" "$pattern" x86)") || sha_x86=''
     sha_arm=''
-    [ "$kind" = split ] && sha_arm=$(remote_sha "$(asset_url "$repo" "$latest" "$pattern" arm)")
+    if [ "$kind" = split ]; then
+        sha_arm=$(remote_sha "$(asset_url "$repo" "$latest" "$pattern" arm)") || sha_arm=''
+    fi
     if [ -z "$sha_x86" ] || { [ "$kind" = split ] && [ -z "$sha_arm" ]; }; then
         printf '          %s\n' "$(red 'アセットを取得できなかったので書き換えません')"
         printf '          %s\n' "アセット名の規則が変わっていないか確認してください: $(asset_url "$repo" "$latest" "$pattern" x86)"
         continue
     fi
-    set_x86 "${name}Version" "$latest"
-    set_x86 "${name}Sha" "$sha_x86"
-    [ "$kind" = split ] && set_arm "${name}Sha" "$sha_arm"
-    printf '          %s %s\n' "$(green '書き換えました')" "$latest"
+
+    # 置換が実際に起きたかを確かめる。変数名を書き間違えていると、sed は
+    # 何も置換せずに成功で終わるので、確かめないと「書き換えました」と
+    # 表示しながら中身が変わらず、次回もまた「更新あり」が出続ける。
+    wrote=1
+    set_x86 "${name}Version" "$latest" || wrote=0
+    set_x86 "${name}Sha" "$sha_x86" || wrote=0
+    if [ "$kind" = split ]; then
+        set_arm "${name}Sha" "$sha_arm" || wrote=0
+    fi
+    if [ "$wrote" -eq 1 ]; then
+        printf '          %s %s\n' "$(green '書き換えました')" "$latest"
+    else
+        printf '          %s\n' "$(red '書き換えられませんでした')"
+        printf '          %s\n' "テンプレートに \$${name}Version / \$${name}Sha の行があるか確認してください。"
+        UNKNOWN=$((UNKNOWN + 1))
+    fi
 done
 
 printf '\n%-26s %-9s %-9s %s\n' skill current latest state
@@ -270,16 +352,32 @@ for path in $(skill_paths); do
     need_write=0
     if [ "$cur" = "$latest" ]; then
         # リビジョンはコミット SHA なので、同じリビジョンの中身が変わることはない。
-        # 食い違うとしたら、記録した sha が間違っているか、Gist そのものが消えたときである。
-        if [ "$(skill_field "$path" sha256)" = "$(remote_sha "$url")" ]; then
-            printf '%-26s %-9s %-9s %s\n' "$name" "$(short "$cur")" "$(short "$latest")" \
-                "$(green '最新 / ハッシュ一致')"
-        else
-            printf '%-26s %-9s %-9s %s\n' "$name" "$(short "$cur")" "$(short "$latest")" \
-                "$(red 'ハッシュ不一致')"
-            STALE=$((STALE + 1))
-            need_write=1
-        fi
+        # 食い違うとしたら、記録した sha が間違っているか、Gist そのものが消えた
+        # ときである。取得できなかった場合と混同しないよう終了コードで分ける。
+        rc=0
+        compare_sha "$(skill_field "$path" sha256)" "$url" || rc=$?
+        case "$rc" in
+            0)
+                printf '%-26s %-9s %-9s %s\n' "$name" "$(short "$cur")" "$(short "$latest")" \
+                    "$(green '最新 / ハッシュ一致')"
+                ;;
+            2)
+                printf '%-26s %-9s %-9s %s\n' "$name" "$(short "$cur")" "$(short "$latest")" \
+                    "$(yellow '最新 / 取得できず未照合')"
+                UNKNOWN=$((UNKNOWN + 1))
+                ;;
+            3)
+                printf '%-26s %-9s %-9s %s\n' "$name" "$(short "$cur")" "$(short "$latest")" \
+                    "$(red 'checksum の宣言がありません')"
+                UNKNOWN=$((UNKNOWN + 1))
+                ;;
+            *)
+                printf '%-26s %-9s %-9s %s\n' "$name" "$(short "$cur")" "$(short "$latest")" \
+                    "$(red 'ハッシュ不一致')"
+                STALE=$((STALE + 1))
+                need_write=1
+                ;;
+        esac
     else
         printf '%-26s %-9s %-9s %s\n' "$name" "$(short "$cur")" "$(short "$latest")" \
             "$(yellow '更新あり')"
@@ -310,14 +408,19 @@ for path in $(skill_paths); do
 
     [ "$WRITE" -eq 1 ] && [ "$need_write" -eq 1 ] || continue
 
-    new_sha=$(remote_sha "$new_url")
+    new_sha=$(remote_sha "$new_url") || new_sha=''
     if [ -z "$new_sha" ]; then
         printf '          %s\n' "$(red '取得できなかったので書き換えません')"
         printf '          %s\n' "ファイル名まで変わっているかもしれません。URL を確認してください: $new_url"
         continue
     fi
-    set_skill "$path" "$latest" "$new_sha"
-    printf '          %s %s\n' "$(green '書き換えました')" "$(short "$latest")"
+    if set_skill "$path" "$latest" "$new_sha"; then
+        printf '          %s %s\n' "$(green '書き換えました')" "$(short "$latest")"
+    else
+        printf '          %s\n' "$(red '書き換えられませんでした')"
+        printf '          %s\n' "宣言のパスが変わっていないか確認してください: $path"
+        UNKNOWN=$((UNKNOWN + 1))
+    fi
 done
 
 printf '%s\n' '--------------------------------------------------------------'

@@ -10,6 +10,12 @@
 #
 # chezmoi は「管理対象から外れたファイル」を消さないため、ここで片付ける。
 #
+# run_once_ ではなく run_ にしてある (毎回走る)。判定の 3 つめが「新しい置き場に
+# 実体がある」ことを要求しており、これは externals の取得が済んでいるかどうかと
+# いう外部の状態に依存する。テンプレートの展開結果は変わらないので run_once_ だと
+# ハッシュも変わらず、初回に externals が落ちた環境では移行が永久に行われない。
+# 到達済みなら 8 回の stat で終わるので、毎回走らせても実質的な負担は無い。
+#
 # 消す条件を三つとも満たしたものだけに限っている。
 #   1. かつて externals が置いていた名前ちょうどであること
 #   2. 通常ファイルであること (自分で張ったシンボリックリンクは残す)
@@ -27,8 +33,13 @@ set -eu
 
 log() { printf '\033[1;34m==>\033[0m %s\n' "$*"; }
 
+# 新しい置き場は継承した XDG_DATA_HOME ではなくリテラルなパスで指す。
+# externals の宛先が .local/share/... と書かれている以上、実体は必ずそこに
+# 降りる。ここだけ継承値に従うと、XDG_DATA_HOME が別の場所を指す環境で
+# 「新しい実体がある」という条件が成立せず、移行が黙って行われなくなる
+# (run_after_20-setup-shell.sh の同じ注記を参照)。
 OLD_DIR="$HOME/.local/bin"
-NEW_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/dotfiles/bin"
+NEW_DIR="$HOME/.local/share/dotfiles/bin"
 
 for name in btm ghq uv uvx procs ouch yazi ya; do
     old="$OLD_DIR/$name"

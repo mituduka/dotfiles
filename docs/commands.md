@@ -6,6 +6,8 @@
 - [単体で使うもの](#単体で使うもの)
 - [git 関連](#git-関連)
 - [Python (uv)](#python-uv)
+- [Node.js (fnm)](#nodejs-fnm)
+- [AI コーディングエージェント](#ai-コーディングエージェント)
 
 ## 従来コマンドの置き換え
 
@@ -185,7 +187,7 @@ tokei -o json            # JSON で出力
 
 ### yazi (ファイラ)
 
-`y` で起動する。yazi を抜けると、シェルがそのときのディレクトリへ `cd` する。`.zshrc` の `y()` というラッパがそうしているので、`yazi` と直接打った場合は cd しない。
+シェルから `y` で起動する。yazi を抜けると、シェルがそのときのディレクトリへ `cd` する。`~/.config/zsh/functions/y` というラッパがそうしているので、`yazi` と直接打った場合は cd しない (このラッパは任意のセットアップに含まれる。[shell.md](shell.md#自作の関数) を参照)。
 
 | キー | 動作 |
 | --- | --- |
@@ -260,7 +262,7 @@ PATH_add .venv/bin
 
 ### delta (差分表示)
 
-`core.pager` と `interactive.diffFilter` に設定してあるので、とくに何もしなくても使われる。`git diff` `git show` `git log -p` `git add -p` の表示が、そのまま delta のものになる。
+`core.pager` と `interactive.diffFilter` に設定してあるので、とくに何もしなくても使われる。ただしこの設定は delta が実際に見つかるときだけ書かれるので、apt に `git-delta` が無い Ubuntu 22.04 では 2 回目の `chezmoi apply` から効く ([理由](design.md#古いディストリでも動く形で配る))。`git diff` `git show` `git log -p` `git add -p` の表示が、そのまま delta のものになる。
 
 ```sh
 git diff                 # delta で表示される
@@ -285,11 +287,11 @@ git unstage <f> # ステージから戻す
 
 | 設定 | 効果 |
 | --- | --- |
-| `push.autoSetupRemote` | 新しいブランチで `git push` だけで upstream が張られる |
+| `push.autoSetupRemote` | 新しいブランチで `git push` だけで upstream が張られる (git 2.37 以降。それ以前は最初だけ `git push -u origin HEAD`) |
 | `pull.ff = only` | `git pull` が勝手にマージコミットを作らない |
 | `fetch.prune` | 消えたリモートブランチの参照を自動で掃除する |
 | `rerere.enabled` | 同じコンフリクトの解決を記憶し、次回自動で再適用する |
-| `merge.conflictstyle = zdiff3` | コンフリクト表示に共通の祖先も出る |
+| `merge.conflictstyle = zdiff3` | コンフリクト表示に共通の祖先も出る (git 2.35 以降。それ以前は `diff3` に落ちる。[理由](design.md#既知の注意点)) |
 | `diff.algorithm = histogram` | 差分がより読みやすい単位で出る |
 
 ### gh (GitHub CLI)
@@ -364,3 +366,61 @@ uvx ruff check .             # 入れずに 1 回だけ実行する
 uv venv                          # .venv を作る
 uv pip install -r requirements.txt
 ```
+
+## Node.js (fnm)
+
+任意のセットアップなので、`chezmoi init` で「Node.js を入れますか」に yes と答えたときだけ入る。バージョンの管理には fnm を使う。既定は LTS の v24 系である。
+
+```sh
+node -v                      # 使っている版
+npm -v
+fnm list                     # 入っている版の一覧
+fnm default                  # 既定の版
+```
+
+版を足したり切り替えたりする。
+
+```sh
+fnm install 22               # 22 系の最新を入れる
+fnm install --lts            # LTS の最新を入れる
+fnm use 22                   # このシェルだけ切り替える
+fnm default 22               # 既定を変える (新しいシェルから効く)
+fnm uninstall v22.22.0
+```
+
+`fnm use` が効くのはそのシェルの中だけで、別のタブには影響しない。既定そのものを変えるのは `fnm default` のほうである。
+
+プロジェクトごとに版を決めたいときは `.node-version` か `.nvmrc` を置く。そのディレクトリに `cd` すると自動で切り替わる。どちらも無ければ `package.json` の `engines.node` も見る (fnm の `--resolve-engines` が既定で有効なため)。
+
+```sh
+node -v > .node-version
+```
+
+入っていない版が指定されていると、移動のたびにその旨が出る。指示どおり `fnm install` すれば止まる。
+
+`chezmoi edit-config` で `nodejs` を `false` に戻しても、入れたものは消えない。chezmoi は管理から外れたものを消さないためである。Node の実体は数百 MB あるので、要らなくなったら手で片付ける。
+
+```sh
+rm -rf ~/.local/share/fnm                 # fnm が入れた Node 一式
+rm -f ~/.local/share/dotfiles/bin/fnm     # fnm 本体 (Linux で externals から来た場合)
+```
+
+`npm -g` で入れたものは、版ごとに分かれた場所に入る。`fnm default` で既定の版を変えると付いてこないので、入れ直しが要る。何が入っているかは切り替える前に控えておく。
+
+```sh
+npm ls -g --depth=0
+```
+
+## AI コーディングエージェント
+
+いずれも任意のセットアップで、`chezmoi init` で yes と答えたものだけが入る。認証は入れただけでは済んでいないので、初回に自分で通す。
+
+| コマンド | 認証 | 更新 |
+| --- | --- | --- |
+| `claude` | 起動するとブラウザが開く | 本体がバックグラウンドで自動更新する |
+| `codex` | `codex login` | 本体が自動更新する |
+| `copilot` | 起動して `/login` | 自動ではない。`copilot update` を自分で打つ |
+
+3 つとも `~/.local/bin` に入る。`chezmoi apply` が再び入れ直すことはなく、入っていないときだけ導入する。消したいときは各ツールの手順に従う (Claude Code なら `rm -f ~/.local/bin/claude && rm -rf ~/.local/share/claude`)。消したうえで入れ直されたくなければ、`chezmoi edit-config` で該当のキーを `false` にしておく。
+
+なぜパッケージマネージャではなく公式スクリプトで入れているのかは [design.md](design.md#ai-エージェントの入れ方) に書いた。

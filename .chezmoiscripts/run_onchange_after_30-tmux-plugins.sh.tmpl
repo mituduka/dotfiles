@@ -16,7 +16,7 @@
 # プラグインが二度と導入されず、tmux.conf を編集するまで静かに壊れたままになる。
 #
 # tmux.conf hash: {{ include "dot_config/tmux/tmux.conf" | sha256sum }}
-# tpm: {{ if stat (joinPath .chezmoi.homeDir ".config/tmux/plugins/tpm/bin/install_plugins") }}present{{ else }}absent{{ end }}
+# tpm: {{ if stat (joinPath .chezmoi.destDir ".config/tmux/plugins/tpm/bin/install_plugins") }}present{{ else }}absent{{ end }}
 # tmux: {{ if lookPath "tmux" }}present{{ else }}absent{{ end }}
 
 set -eu
@@ -62,5 +62,14 @@ if ! command -v tmux >/dev/null 2>&1; then
     exit 0
 fi
 
+# 素で実行してはいけない。プラグインの clone はネットワーク次第で落ちるが、
+# それは「設定の配置」が失敗したわけではない。上のコメントで宣言している
+# とおり、ここでも apply 全体を道連れにしない。
 log 'tmux プラグインを導入します'
-"$TPM_BIN"
+if ! "$TPM_BIN"; then
+    warn 'tmux プラグインの導入に失敗しました。'
+    warn 'tmux を起動して prefix + I を押すと手動で導入できます。'
+    warn 'apply からやり直すなら:'
+    warn '  chezmoi state delete-bucket --bucket=scriptState && chezmoi apply'
+    exit 0
+fi

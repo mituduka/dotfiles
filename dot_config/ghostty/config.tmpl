@@ -4,7 +4,14 @@
 # (.chezmoiexternal.toml.tmpl を参照)。記号が □ になる場合はまず
 # `chezmoi apply --refresh-externals` でフォントが入っているか確認する。
 
-font-family = HackGenConsoleNF-Regular
+# 指定するのは「ファミリ名」で、ファイル名や PostScript 名 (HackGenConsoleNF-
+# Regular) ではない。PostScript 名を渡しても Ghostty は警告を出さず、既定の
+# フォントに黙って落ちる。そうなると英数字は内蔵の JetBrains Mono、日本語は
+# HackGen、記号は内蔵の Symbols Nerd Font という三種混成になり、記号も日本語も
+# 出るので気づきにくい。ただし 1:2 の字幅が崩れて罫線や表の桁がずれる。
+# 正しく効いているかは次で確かめられる。
+#   ghostty +show-face --font-family='HackGen Console NF' --string=A
+font-family = HackGen Console NF
 font-size = 17
 
 shell-integration = zsh

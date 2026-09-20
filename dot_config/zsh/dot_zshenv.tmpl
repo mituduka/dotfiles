@@ -1,0 +1,112 @@
+# $ZDOTDIR/.zshenv
+#
+# 全ての zsh (対話・非対話・スクリプト) で読まれる。
+#
+# ここには環境変数だけを置く。シェルの挙動設定 (history や setopt) は
+# .zshrc に置くこと。macOS の /etc/zshrc が .zshenv の「後」に読まれ、
+# HISTFILE / HISTSIZE / SAVEHIST / BEEP を無条件に上書きしてくるため、
+# ここに書いても効かない。
+
+# ~/.zshenv 経由で来た場合と /etc/zshenv 経由で来た場合の二重読み込みを防ぐ。
+[[ -n "${_DOTFILES_ZSHENV_LOADED:-}" ]] && return
+typeset -g _DOTFILES_ZSHENV_LOADED=1
+
+# ===============================================
+# XDG Base Directory
+#
+# 継承した値を尊重せず固定する。chezmoi は配置先をソース名から決めるので、
+# このリポジトリが管理する設定は XDG_CONFIG_HOME の値に関わらず必ず
+# ~/.config 配下に置かれる。ここで別の場所を指すと、設定が実在する場所と
+# ツールが探す場所が食い違う。~/.zshenv が ZDOTDIR を固定しているのも同じ理由。
+# ===============================================
+export XDG_CONFIG_HOME=${HOME}/.config
+export XDG_CACHE_HOME=${HOME}/.cache
+export XDG_DATA_HOME=${HOME}/.local/share
+export XDG_STATE_HOME=${HOME}/.local/state
+
+{{ if .nodejs }}# ===============================================
+# fnm (Node.js のバージョン管理)
+#
+# FNM_DIR を明示するのは、fnm の既定が「その時点で何が存在するか」で変わる
+# からである。$XDG_DATA_HOME/fnm が無ければ ~/.fnm を、macOS ではさらに
+# ~/Library/Application Support/fnm を順に探し、見つかったほうを使う。
+# 以前 fnm を使ったことのあるマシンでは、古い置き場に吸い寄せられる。
+# 下の path が実体と同じ場所を指していないと node が見つからないので、
+# 継承した XDG_DATA_HOME にも過去の置き場にも左右されない形で固定する。
+#
+# PATH に入れるのは aliases/default/bin である。fnm はデフォルト版への
+# シンボリックリンクをそこに張るので、fnm 本体を起動せずに node へ到達できる。
+# これがこの節をこのファイル (= 全ての zsh が読む) に置ける理由である。
+#
+# ここで `eval "$(fnm env)"` を呼んではいけない。非対話シェルを起動するたびに
+# プロセスが 1 つ増える。Claude Code のフックのように、シェルの起動回数が
+# そのまま待ち時間になる用途で効いてくる。バージョンの切り替えは対話シェル
+# だけでできればよいので、fnm env は .zshrc に置いてある。
+# ===============================================
+export FNM_DIR="${XDG_DATA_HOME}/fnm"
+
+{{ end }}# ===============================================
+# path
+#
+# 組み立てを関数にしてあるのは、あとから並べ直す必要があるからである。
+#
+# macOS の /etc/zprofile は path_helper を呼んで PATH を組み直す。これは
+# このファイルより後、ログインシェルでだけ走る。path_helper は /etc/paths と
+# /etc/paths.d を並べたうえで、既にあったものを「その後ろ」へ回すので、
+# ここで前に置いたはずの ~/.local/bin がシステムのディレクトリより後ろに
+# 落ちる。ターミナルを開いて使うシェルはログインシェルなので、放っておくと
+# 日常的に使う側だけ意図と違う順序になる。$ZDOTDIR/.zprofile が
+# path_helper の後にこの関数をもう一度呼んで並べ直す。
+# (Linux の /etc/zsh/zprofile はコメントだけで、PATH を触らない。)
+#
+# .zshrc でも brew shellenv の後に呼び直す。あちらは /opt/homebrew/bin を
+# 先頭に差し込むので、そのままだと Homebrew が ~/.local/bin より前に出る。
+#
+# typeset -U は重複を落とす (最初に現れたものが残る)。入れ子のシェルで
+# エントリが増え続けるのも、並べ直しで重複が出るのも、これで吸収される。
+#
+# 末尾の dotfiles/bin は、パッケージマネージャに無かったツールを
+# GitHub Releases から入れる置き場 (.chezmoiexternal.toml.tmpl を参照)。
+# PATH の最後に置くことで「apt / pacman にあればそちらを使い、無ければ
+# ここが使われる」という優先順位になる。~/.local/bin に混ぜてはいけない。
+# ===============================================
+_dotfiles_set_path() {
+    typeset -gU path PATH
+    path=(
+        "${HOME}/.local/bin"
+{{ if .nodejs }}        "${FNM_DIR}/aliases/default/bin"
+{{ end }}        /usr/local/sbin
+        $path
+        "${XDG_DATA_HOME}/dotfiles/bin"
+    )
+}
+_dotfiles_set_path
+
+# ===============================================
+# lang
+#
+# LC_ALL は全カテゴリを固定してしまい、`LC_TIME=ja_JP.UTF-8 date` のような
+# 一時的な上書きまで無効にするので設定しない。LANG が既定値として全カテゴリに
+# 効き、個別の LC_* だけがそれを上書きする、という本来の優先順位に任せる。
+# (LANGUAGE は gettext 用の「言語コードの一覧」で、en_US:en のように書く。
+#  ロケール名を入れる場所ではないため使わない。)
+# ===============================================
+export LANG="en_US.UTF-8"
+export LC_CTYPE="${LANG}"
+
+# ===============================================
+# editor
+#
+# nano はパッケージ導入スクリプトが入れる。それでも見つからない環境
+# (最小構成のコンテナなど) で EDITOR が壊れたままにならないよう、
+# POSIX が要求する vi まで落とす。
+# ===============================================
+if command -v nano >/dev/null 2>&1; then
+    export EDITOR="nano"
+else
+    export EDITOR="vi"
+fi
+# GIT_EDITOR は設定しない。git は GIT_EDITOR > core.editor > VISUAL > EDITOR の
+# 順に見るので、EDITOR を export してあれば勝手に拾う。わざわざ GIT_EDITOR を
+# 置くと最優先になってしまい、あとから git config --global core.editor を
+# 設定しても効かなくなる。

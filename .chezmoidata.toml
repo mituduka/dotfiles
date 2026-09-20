@@ -1,0 +1,20 @@
+# オプション項目の既定値。
+#
+# .chezmoi.toml.tmpl が初回プロンプトで聞いて ~/.config/chezmoi/chezmoi.toml の
+# [data] に書き込むが、そちらが優先されるので、ここの値が使われるのは
+# 「まだ答えていないマシン」だけである。
+#
+# この既定値が無いと、任意項目が増えるたびに、まだ chezmoi init をやり直して
+# いない既存のマシンで apply が落ちる。chezmoi はテンプレートから存在しない
+# キーを参照されると、その場で apply 全体を失敗させるためである。
+# 参照する側で毎回 hasKey を書くこともできるが、ファイルが増えるほど書き忘れ
+# やすくなるので、既定値を 1 か所に集めている。
+#
+# zshFunctions だけ true にしてあるのは、外から何も取ってこず、このリポジトリが
+# 持つファイルを置くだけだからである。ここを false にすると、まだ答えていない
+# 既存のマシンで yazi 連携の y が黙って消える。
+claudeCode = false
+codexCli = false
+copilotCli = false
+nodejs = false
+zshFunctions = true

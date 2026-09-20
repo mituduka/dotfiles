@@ -1,0 +1,22 @@
+# y - yazi を起動し、抜けたときのディレクトリへ cd する
+#
+# autoload -Uz で読まれる。このファイルの中身がそのまま関数の本体になるので、
+# y() { ... } では包まない ($ZDOTDIR/.zshrc の functions の節を参照)。
+#
+# yazi 本体は親シェルの cwd を変えられない。終了時のパスを一時ファイルへ
+# 書き出させ、それを読んで cd する、という公式の方法を使っている。
+
+# 呼び出した側の setopt (sh_word_split や nullglob など) に左右されないよう、
+# この関数の中だけ標準の zsh に戻す。-L は関数を抜けるときに元へ戻す指定。
+emulate -L zsh
+
+local tmp cwd
+tmp="$(mktemp -t yazi-cwd.XXXXXX)" || return
+yazi "$@" --cwd-file="$tmp"
+# yazi の終了ステータスを持ち帰る。後片付けで上書きしてしまわないよう控える。
+local ret=$?
+if cwd="$(command cat -- "$tmp")" && [[ -n "$cwd" && "$cwd" != "$PWD" ]]; then
+    builtin cd -- "$cwd"
+fi
+rm -f -- "$tmp"
+return $ret

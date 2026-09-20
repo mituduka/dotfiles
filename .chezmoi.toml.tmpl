@@ -10,6 +10,20 @@
 {{-   if not (or (env "DISPLAY") (env "WAYLAND_DISPLAY")) -}}
 {{-     $headlessDefault = true -}}
 {{-   end -}}
+{{- /*
+     WSL2 は DISPLAY の有無では判定できない。WSLg が DISPLAY を設定するので
+     GUI 扱いになってしまうが、端末は Windows 側のものを使うため、フォントも
+     Ghostty の設定も要らない。カーネルのバージョン文字列に microsoft が
+     入っているかで見分ける (.chezmoi.kernel は Linux でしか埋まらないので、
+     キーの存在を確かめてから読む)。
+*/ -}}
+{{-   if hasKey .chezmoi "kernel" -}}
+{{-     if hasKey .chezmoi.kernel "osrelease" -}}
+{{-       if contains "microsoft" (lower .chezmoi.kernel.osrelease) -}}
+{{-         $headlessDefault = true -}}
+{{-       end -}}
+{{-     end -}}
+{{-   end -}}
 {{- end -}}
 
 {{- /*
@@ -21,10 +35,43 @@
 {{-   $headless = promptBoolOnce . "headless" "ヘッドレス環境ですか (フォントとターミナル設定を入れない)" $headlessDefault -}}
 {{- end -}}
 
+{{- /*
+     空のまま Enter を押しても promptStringOnce は受け取ってしまう。そのまま
+     進むと ~/.config/git/config に user.name = "" が書かれ、セットアップは
+     成功したのにコミットだけができない、という分かりにくい状態になる。
+     ここで止めて、init をやり直させる。
+*/ -}}
 {{- $name := promptStringOnce . "name" "Git user.name" -}}
+{{- if not $name }}{{ fail "Git user.name は空にできません。chezmoi init をやり直してください。" }}{{ end -}}
 {{- $email := promptStringOnce . "email" "Git user.email" -}}
+{{- if not $email }}{{ fail "Git user.email は空にできません。chezmoi init をやり直してください。" }}{{ end -}}
+
+{{- /*
+     ここから下は任意のセットアップである。既定はすべて no にしてある。
+     どれも本体をネットワークから取ってきて ~/.local 以下に置くものなので、
+     「黙って入っている」状態を作らず、明示的に yes と答えたものだけを入れる。
+
+     zshFunctions だけは既定を yes にしてある。外から何も取ってこず、この
+     リポジトリが持っているファイルを置くだけだからである。
+
+     あとから気が変わったときは chezmoi edit-config で書き換えて apply し直す。
+
+     ここで答えた内容は ~/.config/chezmoi/chezmoi.toml に保存される。まだ
+     答えていないマシン (項目を増やす前から使っているマシン) では、
+     .chezmoidata.toml の既定値が使われるので apply が壊れることはない。
+*/ -}}
+{{- $claudeCode := promptBoolOnce . "claudeCode" "Claude Code を入れますか" false -}}
+{{- $codexCli := promptBoolOnce . "codexCli" "Codex CLI を入れますか" false -}}
+{{- $copilotCli := promptBoolOnce . "copilotCli" "GitHub Copilot CLI を入れますか" false -}}
+{{- $nodejs := promptBoolOnce . "nodejs" "Node.js を入れますか (fnm でバージョンを管理する)" false -}}
+{{- $zshFunctions := promptBoolOnce . "zshFunctions" "自作の zsh 関数を入れますか (yazi 連携の y など)" true -}}
 
 [data]
     headless = {{ $headless }}
     name = {{ $name | quote }}
     email = {{ $email | quote }}
+    claudeCode = {{ $claudeCode }}
+    codexCli = {{ $codexCli }}
+    copilotCli = {{ $copilotCli }}
+    nodejs = {{ $nodejs }}
+    zshFunctions = {{ $zshFunctions }}

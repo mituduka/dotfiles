@@ -1,0 +1,168 @@
+{{- if .nodejs -}}
+#!/bin/sh
+#
+# Node.js の導入 (任意)。バージョンの管理には fnm を使う。
+#
+# fnm 本体はパッケージマネージャか externals が入れる
+# (run_once_before_10-install-packages.sh.tmpl と .chezmoiexternal.toml.tmpl)。
+# ここがやるのは Node の実体を 1 つ入れて、それを default に据えることだけ。
+#
+# after_ なのは、Ubuntu では fnm が externals 経由で降りてくるためである。
+# externals はファイルの適用と同じ段で置かれるので、before_ では間に合わない。
+#
+# run_once_ ではなく run_ にしてある (毎回走る)。理由は
+# run_after_20-setup-shell.sh と同じである。
+#
+# chezmoi が「実行済み」として記録するのは終了コード 0 で終えたスクリプトだけ
+# なので、素直に失敗すれば run_once_ でも再試行される。ところがこのスクリプトは
+# 導入に失敗しても警告だけ出して 0 で終える (apply 全体を道連れにしないため)。
+# その結果 run_once_ だと「失敗したが 0 で終えた回」が実行済みとして記録され、
+# 以後どれだけ apply しても再試行されない。到達したい状態を毎回確かめる形にする。
+#
+# 代償として、run_ のスクリプトは中身が変わっていなくても chezmoi status と
+# chezmoi diff に毎回現れる (docs/chezmoi.md の「スクリプト」を参照)。
+#
+# 到達済みのときは fnm を 1 回呼ぶだけで終わる。ネットワークは触らない。
+
+set -eu
+
+log() { printf '\033[1;34m==>\033[0m %s\n' "$*"; }
+warn() { printf '\033[1;33m==>\033[0m %s\n' "$*" >&2; }
+
+# ---------------------------------------------------------------------------
+# 入れる Node のメジャーバージョン
+#
+# メジャーだけを指定して、その中の最新は fnm に選ばせている。パッチ版まで
+# 固定しても、セキュリティ修正のたびに手で追うことになるだけで得がない。
+#
+# 上げるときはここを書き換える。LTS の更新は 10 月なので、偶数のメジャーが
+# 出て半年ほど経ってから上げれば十分である。
+# ---------------------------------------------------------------------------
+NODE_MAJOR=24
+
+# ---------------------------------------------------------------------------
+# 置き場を固定する
+#
+# FNM_DIR は $ZDOTDIR/.zshenv と同じ値でなければならない。片方だけ変えると、
+# .zshenv が PATH に入れた場所と実体の置き場がずれて node が見つからなくなる。
+#
+# 固定する理由は 2 つある。1 つは fnm 側の事情で、既定は $XDG_DATA_HOME/fnm だが、
+# それが無ければ ~/.fnm、macOS ではさらに ~/Library/Application Support/fnm と、
+# 古い置き場を順に探しにいく。以前 fnm を使ったマシンではそちらに吸い寄せられる。
+#
+# もう 1 つは、継承した XDG_DATA_HOME に従ってはいけないことである。.zshenv は
+# この変数を $HOME/.local/share に固定していて、PATH に入れる場所もそこから
+# 作られる。ここだけ継承値に従うと、XDG_DATA_HOME=/opt/data のような環境から
+# apply したときに、実体が /opt/data/fnm に入る一方で .zshenv は
+# ~/.local/share/fnm を見にいき、「導入が完了しました」と出たのに node が
+# 見つからない状態になる。chezmoi の externals も .local/share/... という
+# リテラルな宛先なので、下で fnm を探す先も同じ理由で固定している。
+# ---------------------------------------------------------------------------
+DOTFILES_DATA_HOME="$HOME/.local/share"
+FNM_DIR="$DOTFILES_DATA_HOME/fnm"
+export FNM_DIR
+
+# fnm を探す先を PATH に足す。このスクリプトが継承する PATH は chezmoi を
+# 起動したシェルのものであり、.zshenv が組み立てたものとは限らない。
+#
+# externals の置き場 (Ubuntu ではここに fnm が降りてくる) は末尾に足す。
+{{ if eq .chezmoi.os "darwin" -}}
+#
+# Homebrew の置き場も足す。まっさらな Mac に README の 1 コマンドで入れると、
+# chezmoi を起動したシェルの PATH には /opt/homebrew/bin がまだ無い。
+# run_once_before_10 が brew と fnm を入れても、そこで呼んだ brew shellenv は
+# あちらのスクリプトの中だけの話なので、ここまでは届かない。足しておかないと
+# 初回だけ「fnm が見つかりません」で Node が入らず、2 回目の apply が要る。
+PATH="/opt/homebrew/bin:$PATH:$DOTFILES_DATA_HOME/dotfiles/bin"
+{{ else -}}
+PATH="$PATH:$DOTFILES_DATA_HOME/dotfiles/bin"
+{{ end -}}
+export PATH
+
+if ! command -v fnm >/dev/null 2>&1; then
+    warn 'fnm が見つかりません。Node.js の導入をスキップします。'
+    warn '  パッケージの導入か externals の取得が失敗している可能性があります。'
+    warn '  chezmoi apply をもう一度実行してください。'
+    exit 0
+fi
+
+# ---------------------------------------------------------------------------
+# 到達済みかどうかを確かめる
+#
+# `fnm default` は既定版を表示する。まだ無ければ終了コード 1 を返すので、
+# set -e に巻き込まれないよう || true で受ける。
+# ---------------------------------------------------------------------------
+current="$(fnm default 2>/dev/null || true)"
+case "$current" in
+    v"$NODE_MAJOR".*)
+        # 毎回走るので、到達済みのときは黙って終わる。
+        exit 0
+        ;;
+esac
+
+if [ -n "$current" ]; then
+    log "既定の Node.js を $current から v$NODE_MAJOR 系へ切り替えます"
+    log '  npm で -g 入れたものは版ごとに分かれているので、入れ直しが要ります。'
+else
+    log "Node.js v$NODE_MAJOR 系を導入します"
+fi
+
+# 失敗しても中断しない。毎回走るスクリプトなので次の apply で再試行される。
+# ここで落とすと、独立している run_after_60 (AI エージェント) まで巻き添えで
+# 走らなくなる。
+if ! fnm install "$NODE_MAJOR" || ! fnm default "$NODE_MAJOR"; then
+    warn "Node.js v$NODE_MAJOR の導入に失敗しました。次の chezmoi apply で再試行します。"
+    exit 0
+fi
+
+log "既定の Node.js: $(fnm default)"
+
+# ---------------------------------------------------------------------------
+# 他の経路で入れた node が残っていることを知らせる
+#
+# 消しはしない。Homebrew の node を外すと、そこに npm で -g 入れたものまで
+# 一緒に消えるためである。何が残っているかだけ伝えて、判断は任せる。
+#
+# 実害は無い。$ZDOTDIR/.zshenv が fnm のデフォルト版を、対話シェルではさらに
+# .zshrc の fnm env が multishell のパスを PATH の前に置くので、シェルの中では
+# fnm 版が先に見つかる。それでも「入れたはずの版と node -v が食い違う」と
+# 悩むことになりやすいので、1 度だけ知らせておく。
+#
+# この節は Node を入れた回にしか通らない (上の到達済み判定で先に抜けるため)。
+# 毎回言われても消すかどうかの判断は変わらないので、繰り返さない。
+#
+# fnm のものかどうかは 2 つの置き場で判定する。$FNM_DIR/aliases/default は
+# .zshenv が PATH に入れる固定パス、$FNM_MULTISHELL_PATH は対話シェルで
+# fnm env が割り当てる使い捨てのパスである。後者は $XDG_STATE_HOME の下に
+# 作られるため $FNM_DIR には含まれない。ここを見落とすと、fnm を通した
+# 対話シェルから apply したときにこの警告が出てしまう。
+# 空の変数がパターンになると "/*" が何にでも一致してしまうので、
+# 置き換えの既定値を入れて空にならないようにしてある。
+# ---------------------------------------------------------------------------
+other_node="$(command -v node 2>/dev/null || true)"
+case "$other_node" in
+    ''|"$FNM_DIR"/*|"${FNM_MULTISHELL_PATH:-/nonexistent}"/*) ;;
+    *)
+        log "fnm 以外の node も残っています: $other_node"
+        case "$other_node" in
+            "$HOME"/.local/bin/*)
+                # ~/.local/bin は .zshenv の PATH で fnm より前にある。
+                # ここにあるものは fnm 版より先に見つかるので、実害がある。
+                log '  ここは PATH で fnm より前なので、そちらが使われます。'
+                log "  fnm 版を使うなら $other_node を退けてください。"
+                ;;
+            *)
+                log '  シェルの中では fnm 版が先に見つかるので、そのままでも困りません。'
+                log '  整理するなら次を実行してください。'
+                case "$other_node" in
+                    /opt/homebrew/*|/usr/local/*) log '    brew uninstall node' ;;
+                    *)                            log "    $other_node を PATH から外す" ;;
+                esac
+                ;;
+        esac
+        log '  先に npm ls -g --depth=0 で、一緒に消えるものを確認すること。'
+        ;;
+esac
+
+log 'Node.js の導入が完了しました'
+{{ end -}}

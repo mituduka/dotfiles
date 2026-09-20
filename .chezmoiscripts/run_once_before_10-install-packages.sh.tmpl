@@ -23,8 +23,18 @@ fi
 
 if ! [ -x /opt/homebrew/bin/brew ]; then
     log 'Homebrew を導入します'
+    # コマンド置換の失敗は set -e の対象外である。curl が落ちると置換結果が
+    # 空になり、bash -c '' が 0 を返して素通りする。そのまま進むと、下の
+    # brew bundle が "brew: command not found" で落ちて、本当の原因
+    # (ネットワークやプロキシ) が分からなくなる。入ったことを確かめる。
     NONINTERACTIVE=1 /bin/bash -c \
-        "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+        "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)" || true
+    if ! [ -x /opt/homebrew/bin/brew ]; then
+        printf 'Homebrew の導入に失敗しました。\n' >&2
+        printf 'インストーラを取得できたか、ネットワークとプロキシを確認してください。\n' >&2
+        printf '  https://brew.sh\n' >&2
+        exit 1
+    fi
 fi
 
 eval "$(/opt/homebrew/bin/brew shellenv)"
@@ -41,7 +51,8 @@ brew "direnv"
 brew "dust"
 brew "eza"
 brew "fd"
-brew "fzf"
+{{ if .nodejs }}brew "fnm"
+{{ end }}brew "fzf"
 brew "gh"
 brew "ghq"
 brew "git"
@@ -132,6 +143,9 @@ direnv:direnv:direnv
 dust:du-dust:dust
 eza:eza:eza
 fd:fd-find:fd
+{{/* file(1) は yazi が MIME 判定に使う唯一の必須依存。最小構成のコンテナには無い。 */}}file:file:file
+{{ if .nodejs }}{{/* fnm は Node.js のバージョン管理。apt には無いので externals が補う。 */}}fnm:-:fnm
+{{ end -}}
 {{ if not .headless }}fontconfig:fontconfig:fontconfig
 {{ end -}}
 fzf:fzf:fzf
@@ -160,7 +174,7 @@ zsh:zsh:zsh
 # .chezmoiexternal.toml.tmpl が GitHub Releases から取得するツール。
 # ここに無いものは、パッケージマネージャで入らなかったときに誰も拾わない。
 # 収録の薄い Ubuntu 22.04 で足りなくなるものまで含めてある。
-EXTERNALS=' bottom dust eza ghq git-delta ouch procs sd starship tokei uv yazi '
+EXTERNALS=' bottom dust eza fnm ghq git-delta ouch procs sd starship tokei uv yazi '
 
 WANTED=''
 COVERED=''
@@ -198,8 +212,22 @@ done
 
 if [ -n "$WANTED" ]; then
     log "パッケージを導入します:$WANTED"
+    # まとめて入れるのが速いが、1 つでも失敗すると set -e でここが落ち、
+    # 残りのパッケージも、この下のリンク作成も chezmoi の複製も実行されない。
+    # before_ なので apply 全体も止まる。まとめて試して駄目だったときだけ
+    # 1 つずつ入れ直し、本当に入らなかったものだけを報告する。
     # shellcheck disable=SC2086
-    pkg_install $WANTED
+    if ! pkg_install $WANTED; then
+        warn 'まとめての導入に失敗しました。1 つずつ試します。'
+        FAILED=''
+        for pkg in $WANTED; do
+            pkg_install "$pkg" >/dev/null 2>&1 || FAILED="$FAILED $pkg"
+        done
+        if [ -n "$FAILED" ]; then
+            warn "導入できなかったパッケージ:$FAILED"
+            warn '  必要なら手で導入してください。ここでは続行します。'
+        fi
+    fi
 fi
 
 if [ -n "$COVERED" ]; then
@@ -263,10 +291,14 @@ elif [ "$CHEZMOI_EXECUTABLE" = "$chezmoi_target" ]; then
     log "chezmoi は既に $chezmoi_target にあります"
 else
     # 同名の既存バイナリが実行中でも壊さないよう、一時ファイル経由で差し替える。
+    # 固定名の .new を使うと、2 つの apply が並行したときに同じファイルを
+    # 奪い合い、書きかけのバイナリが chezmoi として置かれうる。mktemp で
+    # 一意にし、途中で死んでも残骸が chezmoi.new として目に付かないようにする。
     log "chezmoi を $chezmoi_target へ複製します"
-    cp "$CHEZMOI_EXECUTABLE" "$chezmoi_target.new"
-    chmod 755 "$chezmoi_target.new"
-    mv -f "$chezmoi_target.new" "$chezmoi_target"
+    chezmoi_tmp="$(mktemp "$HOME/.local/bin/.chezmoi.XXXXXX")"
+    cp "$CHEZMOI_EXECUTABLE" "$chezmoi_tmp"
+    chmod 755 "$chezmoi_tmp"
+    mv -f "$chezmoi_tmp" "$chezmoi_target"
 fi
 
 {{ if not .headless -}}

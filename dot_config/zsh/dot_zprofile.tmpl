@@ -1,6 +1,20 @@
 # $ZDOTDIR/.zprofile
 #
 # ログインシェルで一度だけ読まれる。
+
+# ===============================================
+# PATH の並べ直し
+#
+# /etc/zprofile はこのファイルの直前に読まれる。macOS ではそこで path_helper が
+# PATH を組み直し、$ZDOTDIR/.zshenv が前に置いたエントリをシステムの
+# ディレクトリより後ろへ回してしまう。ここで組み立て直して意図した順序に戻す。
+#
+# 関数は .zshenv が定義している。ログインシェルであれば必ず読まれているが、
+# 何らかの事情で定義されていない場合に落ちないよう存在を確かめる。
+# ===============================================
+if (( $+functions[_dotfiles_set_path] )); then
+  _dotfiles_set_path
+fi
 {{ if eq .chezmoi.os "darwin" }}
 # OrbStack のコマンドライン連携 (docker / orb コマンドなど)
 if [[ -f "$HOME/.orbstack/shell/init.zsh" ]]; then

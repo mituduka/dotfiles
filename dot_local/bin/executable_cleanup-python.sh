@@ -53,8 +53,13 @@ else
 fi
 printf '\n'
 
-if [ -d "$HOME/.pyenv" ]; then
-    printf '  [ディレクトリ] %s (%s)\n' "$HOME/.pyenv" "$(du -sh "$HOME/.pyenv" 2>/dev/null | cut -f1)"
+# 消す先は PYENV_ROOT に従う。$HOME/.pyenv 決め打ちにすると、別の場所を
+# 指している環境で「削除されます」と見せたものが残り、brew の pyenv だけが
+# 消えるという中途半端な結果になる。見せる対象と消す対象は一致させる。
+PYENV_ROOT="${PYENV_ROOT:-$HOME/.pyenv}"
+
+if [ -d "$PYENV_ROOT" ]; then
+    printf '  [ディレクトリ] %s (%s)\n' "$PYENV_ROOT" "$(du -sh "$PYENV_ROOT" 2>/dev/null | cut -f1)"
 fi
 printf '\n'
 
@@ -63,7 +68,14 @@ printf '\n'
 # ---------------------------------------------------------------------------
 if [ "$DRY_RUN" != "1" ]; then
     printf '上記を削除します。取り消せません。続行しますか [y/N]: '
-    read -r answer
+    # 非対話で呼ばれると read は EOF で非ゼロを返し、set -e がここで打ち切る。
+    # 削除が起きない点では安全側だが、何も出さずに終了コード 1 で終わるので
+    # 呼び出した側から原因が分からない。明示的に中止として扱う。
+    if ! read -r answer; then
+        printf '\n'
+        log '入力を読めませんでした。中止します。'
+        exit 0
+    fi
     case "$answer" in
         [yY]|[yY][eE][sS]) ;;
         *) log '中止しました'; exit 0 ;;
@@ -84,9 +96,9 @@ if command -v brew >/dev/null 2>&1; then
     fi
 fi
 
-if [ -d "$HOME/.pyenv" ]; then
-    log "$HOME/.pyenv を削除します"
-    run rm -rf "$HOME/.pyenv"
+if [ -d "$PYENV_ROOT" ]; then
+    log "$PYENV_ROOT を削除します"
+    run rm -rf "$PYENV_ROOT"
 fi
 
 for conda_dir in "$HOME/miniforge3" "$HOME/miniconda3" "$HOME/anaconda3"; do

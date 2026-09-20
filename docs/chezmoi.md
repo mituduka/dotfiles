@@ -6,6 +6,7 @@
 - [ファイル名の規則](#ファイル名の規則)
 - [設定ファイルを管理下に入れる](#設定ファイルを管理下に入れる)
 - [OS ごとに内容を変える](#os-ごとに内容を変える)
+- [任意のセットアップを足す](#任意のセットアップを足す)
 - [ツールを追加する](#ツールを追加する)
 - [スクリプト](#スクリプト)
 - [外部アセットの更新](#外部アセットの更新)
@@ -90,8 +91,11 @@ eval "$(/opt/homebrew/bin/brew shellenv)"
 | `.chezmoi.homeDir` | ホームディレクトリの絶対パス |
 | `.headless` | 初回プロンプトで決めたヘッドレス判定 |
 | `.name` / `.email` | 初回プロンプトで入力した git の設定 |
+| `.claudeCode` / `.codexCli` / `.copilotCli` | AI エージェントを入れるかどうか |
+| `.nodejs` | Node.js を入れるかどうか |
+| `.zshFunctions` | 自作の zsh 関数を入れるかどうか |
 
-後ろの 3 つは `.chezmoi.toml.tmpl` が作り、`~/.config/chezmoi/chezmoi.toml` に保存されている。値を変えるときは `chezmoi edit-config` で書き換えてから `chezmoi apply` する。
+`.chezmoi.os` と `.chezmoi.arch` 以外は `.chezmoi.toml.tmpl` が作り、`~/.config/chezmoi/chezmoi.toml` に保存されている。値を変えるときは `chezmoi edit-config` で書き換えてから `chezmoi apply` する。
 
 書いたテンプレートは、ホームへ反映しなくても展開結果を確認できる。
 
@@ -99,6 +103,70 @@ eval "$(/opt/homebrew/bin/brew shellenv)"
 chezmoi execute-template < dot_config/zsh/dot_zshrc.tmpl | head -40
 chezmoi cat ~/.config/zsh/.zshrc     # 展開結果をそのまま見る
 ```
+
+## 任意のセットアップを足す
+
+「入れるかどうかを選べる」項目は、`.chezmoi.toml.tmpl` のプロンプトと、それを読む側のテンプレートの 2 つでできている。
+
+プロンプトの側はこう書く。`promptBoolOnce` は、設定ファイルにまだそのキーが無いときだけ聞く。
+
+```gotmpl
+{{- $something := promptBoolOnce . "something" "something を入れますか" false -}}
+
+[data]
+    something = {{ $something }}
+```
+
+そして既定値を `.chezmoidata.toml` に足す。これを忘れてはいけない。既に使っているマシンの `~/.config/chezmoi/chezmoi.toml` にはまだそのキーが無く、chezmoi は存在しないキーを参照されると `apply` 全体を失敗させるからである。
+
+```toml
+# .chezmoidata.toml
+something = false
+```
+
+`.chezmoidata.toml` は `chezmoi.toml` の `[data]` より優先度が低いので、答えたマシンではプロンプトの結果が、まだ答えていないマシンでは既定値が使われる。読む側は `.something` と素直に書けばよい。
+
+```gotmpl
+{{ if .something -}}
+...
+{{ end -}}
+```
+
+増えたプロンプトに答えるには `chezmoi init` を実行し直す。既に答えた分は聞き直されない。
+
+スクリプト全体を任意にしたいときは、ファイルの中身を丸ごと条件で囲む。展開結果が空になると、chezmoi はそのスクリプトを実行しない。
+
+```gotmpl
+{{- if .something -}}
+#!/bin/sh
+...
+{{ end -}}
+```
+
+配置するファイルのほうを任意にしたいときは `.chezmoiignore` に条件付きで書く。
+
+```gotmpl
+{{ if not .something -}}
+.config/zsh/functions
+{{ end -}}
+```
+
+既定値は `.chezmoidata.toml` に置いてある。`chezmoi.toml` の `[data]` のほうが優先されるので、ここの値が効くのは「まだ答えていないマシン」だけである。この既定値が無いと、任意項目を増やすたびに、まだ `chezmoi init` をやり直していないマシンで `apply` が落ちる。
+
+いま任意になっているのは AI エージェント 3 つ、Node.js、自作の zsh 関数の 5 つである。それぞれ何をしているかは README の[任意で入るもの](../README.md#任意で入るもの)を見てほしい。
+
+### 後片付けは自動では行われない
+
+`false` に戻しても、既に置かれたものは消えない。chezmoi は管理から外れたファイルを削除しないためである。`.chezmoiignore` に入れるのも、externals の宣言から消すのも、「以後は面倒を見ない」という意味でしかない。
+
+| 戻した項目 | 残るもの |
+| --- | --- |
+| `nodejs` | `~/.local/share/fnm` (Node の実体を含むので数百 MB)、`~/.local/share/dotfiles/bin/fnm` |
+| `zshFunctions` | `~/.config/zsh/functions/` |
+| `headless` を yes にした | `~/.config/ghostty/config`、`~/Library/Fonts/HackGenConsoleNF` (Linux は `~/.local/share/fonts/HackGenConsoleNF`) |
+| AI エージェント | `~/.local/bin/{claude,codex,copilot}` とその配下のデータ |
+
+要らなければ手で消す。`chezmoi forget` はソースの管理から外すだけで、ホーム側のファイルには触らない。
 
 ## ツールを追加する
 
@@ -169,10 +237,25 @@ curl -fsSL <url> | shasum -a 256
 | `run_once_before_` | 1 回だけ。設定ファイルの配置より前 |
 | `run_once_after_` | 1 回だけ。設定ファイルの配置より後 |
 | `run_onchange_after_` | 内容が変わったとき。配置より後 |
+| `run_after_` | `apply` のたび。配置より後 |
 
-数字は実行順を決めるための命名規則で、chezmoi の機能ではない。
+数字そのものに意味は無い。chezmoi が同じ段のスクリプトを名前順に実行するので、それを利用して順序を決めている。
 
-テンプレートが空文字列に展開されたスクリプトは実行されない。特定の OS でだけ走らせたいときは、この性質を使ってスクリプト全体を `{{ if ... }}` で包む。`40-font-cache` と `25-migrate-local-bin` がその書き方をしている。
+`run_once_` にするか `run_` にするかは、失敗したときにどうなってほしいかで決める。
+
+chezmoi が「実行済み」として記録するのは、終了コード 0 で終えたスクリプトだけである。素直に非ゼロで終えるなら `run_once_` でも次の `apply` で再試行される。問題になるのは、失敗を自分で握り潰して 0 を返すスクリプトのほうである。`apply` 全体を道連れにしないためにそう書くのだが、その「失敗したが 0 で終えた回」が実行済みとして記録され、以後どれだけ `apply` しても再試行されない。
+
+到達したい状態がはっきりしているもの (ログインシェルが zsh になっている、`node` が入っている、`claude` が入っている) は `run_` にして、毎回そこに到達しているかを確かめるほうがよい。`20-setup-shell` `25-migrate-local-bin` `50-install-node` `60-install-ai-agents` がその形をしている。
+
+そのぶん、到達済みのときに何もせずすぐ抜けるように書く必要がある。`command -v` を数回呼ぶ程度で済ませ、ネットワークには触らない。
+
+`run_` には代償もある。中身が変わっていなくても、`chezmoi status` と `chezmoi diff` に毎回スクリプトの全文が現れる。設定ファイルの差分だけを見たいときは除外する。
+
+```sh
+chezmoi diff --exclude=scripts
+```
+
+テンプレートが空文字列に展開されたスクリプトは実行されない。特定の OS でだけ走らせたいときは、この性質を使ってスクリプト全体を `{{ if ... }}` で包む。`40-font-cache` と `50-install-node` がその書き方をしている。
 
 `run_once_` が「実行済みかどうか」を判断する材料は、テンプレートを展開したあとの内容のハッシュである。中身が変われば、もう一度実行される。逆に、内容を変えないまま実行させたいときは、記録のほうを消す。
 
@@ -181,7 +264,7 @@ chezmoi state delete-bucket --bucket=scriptState
 chezmoi apply
 ```
 
-`run_onchange_` を別のファイルの変更に反応させたいときは、そのファイルのハッシュをコメントに埋め込んでおく。tmux のプラグイン導入スクリプトがこの書き方をしている。
+`run_onchange_` を別のファイルの変更に反応させたいときは、そのファイルのハッシュをコメントに埋め込んでおく。tmux のプラグイン導入スクリプトがこの書き方をしている。ファイル全体のハッシュを使うと関係のない変更でも再実行されるので、対象を絞れるなら絞る (`40-font-cache` は `regexFindAll` でフォントの宣言だけを抜き出している)。
 
 ```gotmpl
 # tmux.conf hash: {{ include "dot_config/tmux/tmux.conf" | sha256sum }}
@@ -191,7 +274,10 @@ chezmoi apply
 
 `.chezmoiexternal.toml.tmpl` で固定しているバージョンとチェックサムを、上流の最新に合わせるためのスクリプトを用意してある。これは自動では走らない。
 
+`scripts/` は `.chezmoiignore` で除外してあるのでホームには置かれない。ソースリポジトリに移ってから実行する。
+
 ```sh
+chezmoi cd
 scripts/update-externals.sh
 ```
 
@@ -247,7 +333,8 @@ Skill は URL に埋めたリビジョンと `sha256` の両方が書き換わ�
 
 ```
 $ chezmoi apply
-.zshrc has changed since chezmoi last wrote it (diff/overwrite/all-overwrite/skip/quit)?
+.zshrc has changed since chezmoi last wrote it?
+> diff/overwrite/all-overwrite/skip/quit
 ```
 
 ここで `overwrite` を選ぶと追記が消えてしまう。`skip` か `quit` で抜けてから、次の手順でソースに取り込む。
@@ -306,7 +393,7 @@ chezmoi update
 
 ## 困ったとき
 
-まず `chezmoi doctor` を走らせると、足りないコマンドや設定の問題を指摘してくれる。`merge-command` と `edit-command` の警告は想定どおりなので、無視してよい。
+まず `chezmoi doctor` を走らせると、足りないコマンドや設定の問題を指摘してくれる。vim を入れていない Linux では `merge-command` の警告が出るが、これは想定どおりなので無視してよい ([理由](design.md#re-add-と-merge-が使えない))。`edit-command` のほうは nano を入れているので本来 `ok` になる。警告が出たら、nano が入っていないか `EDITOR` が壊れている。
 
 | 症状 | 対処 |
 | --- | --- |

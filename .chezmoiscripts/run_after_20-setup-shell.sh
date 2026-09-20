@@ -7,10 +7,18 @@
 #
 # run_once_ ではなく run_ にしてある (毎回走る)。chsh は sudo ではなく PAM で
 # 当人のパスワードを要求するため、非対話の apply では通らないことがある。
-# run_once_ だと失敗が「実行済み」として記録され、以後どれだけ apply しても
-# 再試行されず、警告も二度と出ないまま bash に取り残される。
+#
+# chezmoi が「実行済み」として記録するのは、終了コード 0 で終えたスクリプト
+# だけである (非ゼロで終えたものは記録されず、次の apply で再試行される)。
+# ところがこのスクリプトは、chsh に失敗しても警告だけ出して 0 で終える。
+# 黙って apply 全体を落とさないためにそうしているのだが、run_once_ にすると
+# その「失敗したが 0 で終えた回」が実行済みとして記録され、以後どれだけ
+# apply しても再試行されず、警告も二度と出ないまま bash に取り残される。
 # run_onchange_ でも同じで、失敗し続ける限りログインシェルの値が変わらないので
 # ハッシュも変わらず再実行されない。到達したい状態を毎回確かめる形にする。
+#
+# 代償として、run_ のスクリプトは中身が変わっていなくても chezmoi status と
+# chezmoi diff に毎回現れる (docs/chezmoi.md の「スクリプト」を参照)。
 #
 # 冪等なので繰り返して安全。既に zsh なら何もせずに終わる。
 
@@ -19,9 +27,24 @@ set -eu
 log() { printf '\033[1;34m==>\033[0m %s\n' "$*"; }
 warn() { printf '\033[1;33m==>\033[0m %s\n' "$*" >&2; }
 
-XDG_CACHE_HOME="${XDG_CACHE_HOME:-$HOME/.cache}"
-XDG_STATE_HOME="${XDG_STATE_HOME:-$HOME/.local/state}"
-XDG_DATA_HOME="${XDG_DATA_HOME:-$HOME/.local/share}"
+# ---------------------------------------------------------------------------
+# 置き場は継承した XDG_* に従わず、$ZDOTDIR/.zshenv と同じ値に固定する。
+#
+# .zshenv は XDG_CONFIG_HOME などを継承値によらず ~/.config 以下に固定して
+# いる。chezmoi が配置先をソース名から決める以上、設定の実在する場所と
+# ツールが探す場所を一致させるにはそうするしかないからである
+# (理由は .zshenv のコメントと docs/design.md を参照)。
+#
+# chezmoi の externals も同じで、宛先は .local/share/... というリテラルな
+# パスであり、XDG_DATA_HOME が何であろうとそこに降りる。
+#
+# したがってスクリプト側だけが継承値に従うと、作るディレクトリと実際に
+# 使われるディレクトリがずれる。XDG_DATA_HOME=/opt/data のような環境から
+# chezmoi apply したときにだけ表に出るので、気づきにくい。
+# ---------------------------------------------------------------------------
+CACHE_HOME="$HOME/.cache"
+STATE_HOME="$HOME/.local/state"
+DATA_HOME="$HOME/.local/share"
 
 # ---------------------------------------------------------------------------
 # compinit の zcompdump 置き場。これが無いと補完キャッシュを書き出せず、
@@ -31,9 +54,9 @@ XDG_DATA_HOME="${XDG_DATA_HOME:-$HOME/.local/share}"
 # $ZDOTDIR/.zshenv が PATH の末尾に入れている。空でも先に作っておく。
 # ---------------------------------------------------------------------------
 mkdir -p \
-    "$XDG_CACHE_HOME/zsh" \
-    "$XDG_STATE_HOME/zsh" \
-    "$XDG_DATA_HOME/dotfiles/bin" \
+    "$CACHE_HOME/zsh" \
+    "$STATE_HOME/zsh" \
+    "$DATA_HOME/dotfiles/bin" \
     "$HOME/.local/bin"
 
 # ---------------------------------------------------------------------------
@@ -42,7 +65,7 @@ mkdir -p \
 # 重複しないようにしている。
 # ---------------------------------------------------------------------------
 OLD_HISTFILE="$HOME/.config/zsh/.zsh_history"
-NEW_HISTFILE="$XDG_STATE_HOME/zsh/history"
+NEW_HISTFILE="$STATE_HOME/zsh/history"
 if [ -f "$OLD_HISTFILE" ] && [ ! -f "$NEW_HISTFILE" ]; then
     log "履歴を移送します: $OLD_HISTFILE -> $NEW_HISTFILE"
     cp "$OLD_HISTFILE" "$NEW_HISTFILE"
@@ -80,9 +103,17 @@ if [ -r /etc/shells ] && ! grep -qxF "$zsh_path" /etc/shells; then
     if [ "$(id -u)" -eq 0 ]; then
         log "/etc/shells に $zsh_path を追記します"
         printf '%s\n' "$zsh_path" >> /etc/shells
-    elif command -v sudo >/dev/null 2>&1; then
+    elif command -v sudo >/dev/null 2>&1 && { [ -t 0 ] || sudo -n true 2>/dev/null; }; then
+        # このスクリプトの他の失敗経路はすべて警告に留めているのに、ここだけ
+        # 素で実行すると sudo の失敗で apply 全体が落ちる。しかも毎回走るので
+        # 毎回落ちる。端末が無く、かつパスワードがキャッシュされてもいないなら
+        # そもそも試さない (試せばパスワード待ちで apply が止まる)。
         log "/etc/shells に $zsh_path を追記します (sudo)"
-        printf '%s\n' "$zsh_path" | sudo tee -a /etc/shells >/dev/null
+        if ! printf '%s\n' "$zsh_path" | sudo tee -a /etc/shells >/dev/null; then
+            warn "/etc/shells への追記に失敗しました。次を手動で実行してください:"
+            warn "  echo $zsh_path | sudo tee -a /etc/shells"
+            exit 0
+        fi
     else
         warn "$zsh_path が /etc/shells にありません。手動で追記してください。"
         exit 0

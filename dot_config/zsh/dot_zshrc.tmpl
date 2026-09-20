@@ -1,3 +1,8 @@
+{{- /* zshFunctions だけ既定が true である。外から何も取ってこず、この
+       リポジトリが持つファイルを置くだけなので (.chezmoi.toml.tmpl を参照)、
+       キーが無いマシンでも入れる。ここを false にすると、まだ chezmoi init を
+       やり直していない既存のマシンで y が黙って消える。 */ -}}
+
 # $ZDOTDIR/.zshrc
 #
 # 対話シェルでのみ読まれる。読み込み順序には意味があるので、
@@ -9,7 +14,10 @@
 # 端末側の機能 (プロンプト位置の把握、カレントディレクトリの引き継ぎなど) を
 # 有効にする。他の初期化より先に行う必要がある。
 # ===============================================
-if [[ -n "$GHOSTTY_RESOURCES_DIR" ]]; then
+# 変数だけを見てはいけない。tmux のセッションに別の端末から attach したとき、
+# sudo -E、docker exec、ssh の SendEnv など、変数だけが残ってファイルが無い
+# 状況がある。そのたびに no such file or directory が出る。
+if [[ -r "$GHOSTTY_RESOURCES_DIR/shell-integration/zsh/ghostty-integration" ]]; then
   source "$GHOSTTY_RESOURCES_DIR/shell-integration/zsh/ghostty-integration"
 fi
 
@@ -19,6 +27,10 @@ fi
 # ===============================================
 if [[ -x /opt/homebrew/bin/brew ]]; then
   eval "$(/opt/homebrew/bin/brew shellenv)"
+  # brew shellenv は /opt/homebrew/bin を PATH の先頭に差し込む。そのままだと
+  # ~/.local/bin や fnm の既定版より前に出てしまうので、.zshenv が決めた順序に
+  # 戻す (関数の定義は $ZDOTDIR/.zshenv を参照)。
+  (( $+functions[_dotfiles_set_path] )) && _dotfiles_set_path
 fi
 
 {{ end -}}
@@ -84,17 +96,59 @@ unsetopt bg_nice
 
 {{ if eq .chezmoi.os "darwin" -}}
 # ===============================================
-# fpath
+# fpath (Homebrew の補完定義)
 #
-# compinit は「その時点の fpath」を走査して補完定義を集め、結果を
-# zcompdump に書き出す。したがって fpath への追加は compinit より前で
-# なければならず、後ろに書くと 1 つも登録されない。
-# (brew shellenv が追加する share/zsh/site-functions とは別ディレクトリで、
-#  zsh-completions formula の 180 個ほどの定義がこちらに入っている。)
+# brew shellenv が追加する share/zsh/site-functions とは別ディレクトリで、
+# zsh-completions formula の 180 個ほどの定義がこちらに入っている。
+#
+# compinit は「その時点の fpath」を走査して補完定義を集め、結果を zcompdump に
+# 書き出す。したがって fpath への追加は compinit より前でなければならず、
+# 後ろに書くと 1 つも登録されない。下の「自作の zsh 関数」も同じ理由で
+# compinit より前に置いてある。
 # ===============================================
-if type brew &>/dev/null; then
-  FPATH="$(brew --prefix)/share/zsh-completions:$FPATH"
+# HOMEBREW_PREFIX は 2 つ上の brew shellenv が export している。ここで
+# brew --prefix を呼ぶと同じ値を得るために毎回サブプロセスが 1 つ増える
+# (このマシンの実測で約 7ms、対話シェルの起動時間の 1 割強にあたる)。
+if [[ -n "$HOMEBREW_PREFIX" ]]; then
+  FPATH="${HOMEBREW_PREFIX}/share/zsh-completions:$FPATH"
 fi
+
+{{ end -}}
+{{ if .zshFunctions -}}
+# ===============================================
+# fpath (自作の zsh 関数)
+#
+# $ZDOTDIR/functions/<名前> に 1 ファイル 1 関数で置き、autoload で必要に
+# なったときだけ読み込む。.zshrc に直接書くのと違い、起動時に読むのは
+# ファイル名の一覧だけで済む。
+#
+# 各ファイルの中身は関数の「本体」であって、y() { ... } では包まない。
+# autoload -Uz はファイルの内容をそのまま本体として扱う。
+#
+# fpath への追加なので、この節は compinit より前でなければならない。
+#
+# グロブ修飾子の意味は次のとおり。
+#   N   マッチが無いときにエラーにせず空にする
+#   -.  通常ファイルだけを採る。- を付けるとシンボリックリンクは辿った先で
+#       判定するので、リンクで置いた関数も拾える (- が無いと黙って落ちる)
+#   :t  パスからファイル名だけを取り出す
+#
+# そのあと :#_* で _ 始まりを落とす。そちらは補完定義の置き場であって関数では
+# なく、autoload すると compdef の指示ごと関数として読み込むことになる。
+# (この節は fpath にも足すので、補完定義を置きたければ置ける。ただし
+#  compinit -C は fpath を読み直さないため、zcompdump を消すまで効かない。)
+#
+# 引数が空のまま autoload を呼ぶと、何もせずに済ませるどころか autoload 可能な
+# 関数の一覧を吐くので、件数を数えてから呼んでいる。
+# ===============================================
+() {
+  local dir="${ZDOTDIR:-$HOME/.config/zsh}/functions"
+  [[ -d "$dir" ]] || return 0
+  fpath=("$dir" $fpath)
+  local -a fns=("$dir"/*(N-.:t))
+  fns=(${fns:#_*})
+  (( $#fns )) && autoload -Uz $fns
+}
 
 {{ end -}}
 # ===============================================
@@ -238,6 +292,35 @@ if command -v fzf >/dev/null 2>&1; then
   fi
 fi
 
+{{ if .nodejs -}}
+# ===============================================
+# fnm (Node.js のバージョン管理)
+#
+# $ZDOTDIR/.zshenv がやっているのは、デフォルト版への固定パス
+# ($FNM_DIR/aliases/default/bin) を PATH に入れることだけである。それだけでも
+# node と npm は使えるが、版を切り替えることはできない。ここで fnm env を
+# 通すと、このシェル専用の PATH (FNM_MULTISHELL_PATH) が先頭に割り当てられ、
+# fnm use が他のシェルに影響せずに効くようになる。
+#
+# --use-on-cd は .node-version / .nvmrc / package.json のあるディレクトリに
+# 入ったときに fnm use を自動で呼ぶ。そこで指定された版が入っていないと
+# 移動のたびに知らせが出るので、うるさければこのフラグを外す。
+#
+# この節は対話シェルにしか要らない。非対話シェルにまで fnm env を通すと、
+# シェルを起動するたびにプロセスが 1 つ増えるうえ、使い捨ての multishell
+# ディレクトリが増え続ける。置き場は XDG_RUNTIME_DIR があればそこ (Linux では
+# /run/user/<uid> で、再起動すれば消える)、無ければ $XDG_STATE_HOME になる
+# (macOS はこちら。消えないので、対話シェルのぶんだけに留めておきたい)。
+#
+# macOS では brew shellenv より後になければならない。brew shellenv は
+# /opt/homebrew/bin を PATH の先頭に置き直すので、先に書くと brew で node を
+# 入れているマシンでそちらが先に見つかる。
+# ===============================================
+if command -v fnm >/dev/null 2>&1; then
+  eval "$(fnm env --shell zsh --use-on-cd)"
+fi
+
+{{ end -}}
 # ===============================================
 # direnv (ディレクトリ単位の環境変数)
 #
@@ -261,27 +344,17 @@ fi
 # その結果ここで拾えるようになるので、単語移動を割り当て直す。
 #
 # tmux の中では tmux が先に受け取るため、ペイン移動が優先される。
+#
+# 先に bindkey -e で emacs キーマップを明示する。これを省くと、zsh は
+# VISUAL / EDITOR の値を見てキーマップを決める。$ZDOTDIR/.zshenv は nano が
+# 無い環境で EDITOR を vi まで落とすので、最小構成のコンテナや、パッケージ
+# 導入より前に開いたシェルでは vi キーマップになり、Ctrl-A / Ctrl-E /
+# Alt-B / Alt-F が一斉に効かなくなる。下の 2 行も viins 側に登録されて
+# Esc 前置と食い合う。エディタの選択とキーマップは切り離しておく。
 # ===============================================
+bindkey -e
 bindkey '\e[1;3D' backward-word
 bindkey '\e[1;3C' forward-word
-
-# ===============================================
-# yazi (ファイラ)
-#
-# yazi を抜けたときのディレクトリへ cd する。yazi 本体は cd できないので、
-# 終了時のパスを一時ファイル経由で受け取る公式の方法を使う。
-# ===============================================
-if command -v yazi >/dev/null 2>&1; then
-  function y() {
-    local tmp cwd
-    tmp="$(mktemp -t yazi-cwd.XXXXXX)"
-    yazi "$@" --cwd-file="$tmp"
-    if cwd="$(command cat -- "$tmp")" && [[ -n "$cwd" && "$cwd" != "$PWD" ]]; then
-      builtin cd -- "$cwd"
-    fi
-    rm -f -- "$tmp"
-  }
-fi
 
 # ===============================================
 # Starship (プロンプト)

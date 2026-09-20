@@ -8,6 +8,7 @@ zsh 本体とプラグインの使い方をまとめる。個々のコマンド�
 - [絞り込み (fzf)](#絞り込み-fzf)
 - [履歴](#履歴)
 - [設定ファイルの構成](#設定ファイルの構成)
+- [自作の関数](#自作の関数)
 
 ## 略語 (zsh-abbr)
 
@@ -111,7 +112,6 @@ macOS で `Alt-C` が効かないときは、ターミナルの Option キーの
 | `Ctrl-J` / `Ctrl-K` | 候補を上下に移動 |
 | `Enter` | 決定 |
 | `Tab` | 複数選択 (対応しているコマンドのみ) |
-| `Ctrl-/` | プレビューの表示切り替え |
 | `Esc` / `Ctrl-C` | 中止 |
 
 ### 補完トリガー
@@ -126,6 +126,8 @@ ssh **<Tab>          # 既知のホストから選ぶ
 ```
 
 ## 履歴
+
+旧構成から移る場合、`~/.config/zsh/.zsh_history` があれば `~/.local/state/zsh/history` へ複製される (移送先がまだ無いときだけ)。元のファイルは残るので、確認したうえで消す。
 
 | 項目 | 値 |
 | --- | --- |
@@ -157,11 +159,15 @@ ssh **<Tab>          # 既知のホストから選ぶ
 
 ```
 ~/.zshenv           ZDOTDIR を ~/.config/zsh に設定し、その .zshenv を読む
-  └ $ZDOTDIR/.zshenv    環境変数だけ (XDG, PATH, LANG, EDITOR)
+  └ $ZDOTDIR/.zshenv    環境変数だけ (XDG, PATH, LANG, EDITOR, FNM_DIR)
+     ↓
+  (ログインシェルのみ) /etc/zprofile → $ZDOTDIR/.zprofile
+                          macOS ではここで PATH が組み直されるので並べ直す
      ↓
   (macOS のみ) /etc/zshrc が割り込む
      ↓
   $ZDOTDIR/.zshrc       履歴設定・補完・プラグイン・各種初期化
+     └ $ZDOTDIR/functions/   自作の関数。1 ファイル 1 関数で autoload する
 ```
 
 ホーム直下の `~/.zshrc` は読まれない。それでも `~/.config/zsh/.zshrc` へのシンボリックリンクを置いてあるのは、インストーラが書き込んだ内容を実体のファイルに届かせるためである ([design.md](design.md#zshrc-をシンボリックリンクにしている))。
@@ -172,4 +178,35 @@ ssh **<Tab>          # 既知のホストから選ぶ
 - 履歴と `setopt` は `.zshenv` ではなく `.zshrc` に書く。macOS では `/etc/zshrc` が上書きしてくるからである。
 - 外部コマンドを呼ぶ行は `command -v` で包む。この設定は 3 つの OS で共有しているので、ツールが入っていないマシンで裸の `eval` を実行すると、シェルの起動そのものが壊れる。
 
-`PATH` は `.zshenv` で 3 つの層に組んである。この順序にも意味があるので、[design.md](design.md#ファイルの置き場と-path-の順序) を参照してほしい。
+`PATH` は `.zshenv` で層に分けて組んである。この順序にも意味があるので、[design.md](design.md#ファイルの置き場と-path-の順序) を参照してほしい。
+
+## 自作の関数
+
+自分で書いた zsh 関数は `~/.config/zsh/functions/` に置く。1 ファイルにつき 1 関数で、ファイル名がそのまま関数名になる。`.zshrc` が起動時に読むのはファイル名の一覧だけで、中身は実際に呼ばれたときに読まれる。
+
+いま入っているのは yazi 用の `y` だけである。
+
+関数を足すときは、ファイル名を関数名にして置く。
+
+```sh
+chezmoi cd
+$EDITOR dot_config/zsh/functions/mkcd
+chezmoi apply && exec zsh
+```
+
+中身は関数の「本体」だけを書く。`mkcd() { ... }` のようには包まない。`autoload -Uz` はファイルの内容をそのまま本体として扱うので、包むと「関数を定義するだけの関数」になり、1 回目の呼び出しで何も起きなくなる。
+
+```zsh
+# mkcd - ディレクトリを作ってそこへ移動する
+mkdir -p -- "$1" && builtin cd -- "$1"
+```
+
+`.zshrc` に直接書くのと比べて、次の 3 点が違う。
+
+- 起動が速い。呼ばれるまで中身を読まないので、関数が増えても起動時間は変わらない。
+- 書き間違えてもシェルの起動は止まらない。`.zshrc` の構文エラーは起動そのものを壊すが、autoload した関数の誤りは、その関数を呼んだときにしか出ない。
+- `.zshrc` の節の順序を気にしなくてよい。読み込み順序に意味があるのは `.zshrc` の中だけである。
+
+`chezmoi init` で「自作の zsh 関数を入れますか」に no と答えている場合、このディレクトリは配置されず、`y` も使えない。`chezmoi edit-config` で `zshFunctions` を `true` にすれば入る。
+
+逆に `true` から `false` へ戻したときは、`.zshrc` の autoload だけが消えて `~/.config/zsh/functions/` のファイルは残る。chezmoi は管理から外れたものを消さないためである。気になるならディレクトリごと手で消す。

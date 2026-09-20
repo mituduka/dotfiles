@@ -7,20 +7,29 @@
 #
 # 再実行のきっかけは 2 つある。
 #
-#   1. externals のハッシュ = 取得するフォントが変わったとき
+#   1. フォントの宣言  = 取得するフォントが変わったとき
 #   2. fc-cache の有無      = 前回 fc-cache が無くて何もできなかった環境に
 #                             fontconfig が入ったとき
 #
 # 2 が無いと、fc-cache を持たない環境で一度 exit 0 した時点で「実行済み」として
 # 記録され、あとから fontconfig を入れても二度と走らない。
 #
-# externals hash: {{ include ".chezmoiexternal.toml.tmpl" | sha256sum }}
+# externals 全体のハッシュを使ってはいけない。uv や eza の版を更新しただけで
+# フォントと無関係に再実行される。フォントの宣言だけを抜き出す。
+# hackgen: {{ regexFindAll "hackgen[A-Za-z]* +:?= \"[^\"]*\"" (include ".chezmoiexternal.toml.tmpl") -1 | join " " }}
 # fc-cache: {{ if lookPath "fc-cache" }}present{{ else }}absent{{ end }}
 
 set -eu
 
 if ! command -v fc-cache >/dev/null 2>&1; then
     printf 'fc-cache が見つかりません。フォントキャッシュの更新をスキップします。\n' >&2
+    exit 0
+fi
+
+# externals の取得が落ちているとディレクトリごと存在しない。そのまま渡すと
+# fc-cache が非ゼロで終わり、set -e で apply 全体が落ちる。
+if [ ! -d "$HOME/.local/share/fonts" ]; then
+    printf 'フォントがまだ置かれていません。キャッシュの更新をスキップします。\n' >&2
     exit 0
 fi
 

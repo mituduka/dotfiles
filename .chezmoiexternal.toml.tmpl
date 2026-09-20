@@ -8,6 +8,7 @@
   `chezmoi apply --refresh-externals` で refreshPeriod を無視した再取得ができる。
 */ -}}
 
+
 {{- /* Rust 製 CLI の Releases はターゲットトリプルで命名されている。 */ -}}
 {{- $rustArch := "x86_64" -}}
 {{- if eq .chezmoi.arch "arm64" -}}{{- $rustArch = "aarch64" -}}{{- end -}}
@@ -21,6 +22,8 @@
 {{- $ouchVersion := "0.8.3" -}}
 {{- $uvVersion := "0.12.13" -}}
 {{- $yaziVersion := "v26.9.1" -}}
+{{- /* fnm は Node.js のバージョン管理。nodejs を入れる選択をしたときだけ使う。 */ -}}
+{{- $fnmVersion := "v1.39.0" -}}
 {{- /* 以下は Ubuntu 22.04 の apt に収録が無いもの。 */ -}}
 {{- $deltaVersion := "0.19.2" -}}
 {{- $dustVersion := "v1.2.5" -}}
@@ -46,6 +49,10 @@
 {{- $procsSha  := "81964faf9d5cd0e9f399d5d0954fb6fe4d4d9f7d3cbec4507633df5a45b11713" -}}
 {{- $ouchSha   := "f0664cbb3bf8c5c781637da2c8bb86b4561a8709f7e10ddb1188150e68e619a7" -}}
 {{- $yaziSha   := "9b9c39decccf8cb0ff53a7d637d38f8a79d93bbd0099f4ea9c619ef6bb392f5d" -}}
+{{- /* fnm のアセット名はターゲットトリプルではなく linux / arm64 と書かれている。
+       $rustArch では組み立てられないので、アセット名ごと分けて持つ。 */ -}}
+{{- $fnmAsset := "fnm-linux" -}}
+{{- $fnmSha   := "7807664f39d39fc518da1c35ba0181e4b3267603c4b1dedeb4b5fc6ae440a224" -}}
 {{- $deltaSha    := "8e695c5f586a8c53d6c3b01be0b4a422ed218bfed2a56191caebe373a1c18ab2" -}}
 {{- $dustSha     := "64b16f5c10cc4c25d2eaa144e9d2d44b3ed8f72ee63b3bc0a92c85e21e9e0932" -}}
 {{- $ezaSha      := "35c70c5c43c29108075e58b893234c67ef585f0b53a7eaf8e9e7d4eec9f339b4" -}}
@@ -60,6 +67,8 @@
 {{-   $procsSha  = "74b4f82acc6fe553cbd5af20ba0baac420b42bef9bb0cbb38fef14b8317d9f91" -}}
 {{-   $ouchSha   = "d3f856069f264a9f43128cd90491666a3344f1743f68a3f56ac8735072697a6f" -}}
 {{-   $yaziSha   = "dd569daecaae914185f295634109295ccd25c1b42b02eb89a74f651970024f2e" -}}
+{{-   $fnmAsset  = "fnm-arm64" -}}
+{{-   $fnmSha    = "4eaff58b2c5bf30d0934027572dd0b5bbb60d2a1af309230b53662d4b1d45599" -}}
 {{-   $deltaSha    = "0bfce159a5cddd5feb3d6db4a616d883ff51253ce08ac7ec11cb1d208cfaab9e" -}}
 {{-   $dustSha     = "83b8d5b068bdbfd1952a55c8419e77c413d1c084ce7f7369d28f9be36d66dd6a" -}}
 {{-   $ezaSha      = "40b87ae8628aa2ff0f0d2dc24ab52f689631366385c3da630bae745671fd71ec" -}}
@@ -276,12 +285,14 @@
 # ここに並べておいて困るのは、収録のある環境で使われないバイナリが 1 つ増える
 # ことだけで、上の btm や procs と同じ割り切りである。
 #
-# 配布形式は musl を優先する。glibc 版はビルドに使った環境の glibc より古い
+# 配布形式は gnu を既定にし、musl を使うのは 2 つの場合だけである
+# (docs/design.md#古いディストリでも動く形で配る を参照)。glibc 版はビルドに使った環境の glibc より古い
 # システムでは動かず、実際 yazi v26.9.1 の gnu 版は GLIBC_2.39 を要求するため
 # Ubuntu 22.04 (glibc 2.35) では起動しない。musl 版は静的リンクなので
 # ディストリの新旧に左右されない。
 # delta / eza / tokei は aarch64 の musl 版を配っていないので gnu 版を使うが、
-# こちらは要求が GLIBC_2.18 と低く、22.04 でも動くことを確認してある。
+# 固定しているアセットの要求を実測すると eza と tokei が GLIBC_2.18、uv が 2.17、
+# bottom / delta / dust / ouch が 2.34 で、いずれも 22.04 の 2.35 に収まる。
 # ---------------------------------------------------------------------------
 
 [".local/share/dotfiles/bin/delta"]
@@ -293,7 +304,7 @@
     [".local/share/dotfiles/bin/delta".checksum]
         sha256 = "{{ $deltaSha }}"
 
-# dust だけは musl 版を避けている。並列に走査してノードを大量に確保するため、
+# dust で musl 版を避けている理由。並列に走査してノードを大量に確保するため、
 # musl の mallocng の遅さがそのまま出る。80,000 ファイルの走査で musl 版は
 # 116.5ms、gnu 版は 22.4ms だった。gnu 版の要求は GLIBC_2.34 で 22.04 (2.35)
 # に収まるので、ここは速いほうを取る。
@@ -345,4 +356,21 @@
     refreshPeriod = "720h"
     [".local/share/dotfiles/bin/tokei".checksum]
         sha256 = "{{ $tokeiSha }}"
+
+{{ if .nodejs }}
+# fnm は Node.js のバージョン管理。Node.js を入れる選択をしたときだけ取得する。
+# apt には収録が無く、pacman の extra にはあるので、実際にここから降りてくるのは
+# Debian 系だけになる (Arch では /usr/bin のほうが PATH の先に来る)。
+#
+# 配布されているのは静的リンクの単一バイナリなので、Ubuntu 22.04 でも glibc の
+# 版を気にせず動く。zip の中身は fnm 1 つだけ。
+[".local/share/dotfiles/bin/fnm"]
+    type = "archive-file"
+    url = "https://github.com/Schniz/fnm/releases/download/{{ $fnmVersion }}/{{ $fnmAsset }}.zip"
+    path = "fnm"
+    executable = true
+    refreshPeriod = "720h"
+    [".local/share/dotfiles/bin/fnm".checksum]
+        sha256 = "{{ $fnmSha }}"
+{{ end }}
 {{ end -}}
