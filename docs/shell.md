@@ -159,7 +159,7 @@ ssh **<Tab>          # 既知のホストから選ぶ
 
 ```
 ~/.zshenv           ZDOTDIR を ~/.config/zsh に設定し、その .zshenv を読む
-  └ $ZDOTDIR/.zshenv    環境変数だけ (XDG, PATH, LANG, EDITOR, FNM_DIR)
+  └ $ZDOTDIR/.zshenv    環境変数だけ (XDG, PATH, LANG, EDITOR, FNM_DIR, RUSTUP_HOME, CARGO_HOME)
      ↓
   (ログインシェルのみ) /etc/zprofile → $ZDOTDIR/.zprofile
                           macOS ではここで PATH が組み直されるので並べ直す

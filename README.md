@@ -1,8 +1,12 @@
 # dotfiles
 
-macOS / Ubuntu / Arch Linux の CLI 環境を 1 コマンドで揃えるための設定をまとめてある。設定の管理には [chezmoi](https://www.chezmoi.io/) を使う。
+macOS / Ubuntu / Arch Linux の CLI 環境の構築をまとめて行うためのリポジトリ。  
+管理には [chezmoi](https://www.chezmoi.io/) を利用する。
 
-| 対象 | 状態 |
+
+## 対応状況
+
+| 対象 | 検証状況 |
 | --- | --- |
 | macOS | Apple Silicon のみ (Intel Mac は非対応) |
 | Ubuntu / Debian | Ubuntu 26.04 LTS と 22.04 LTS で検証 |
@@ -12,7 +16,7 @@ macOS / Ubuntu / Arch Linux の CLI 環境を 1 コマンドで揃えるため�
 
 zsh、CLI ツール一式、プロンプト、tmux、フォント、git の設定が入る。テキストエディタとブラウザは扱わない。
 
-AI コーディングエージェント (Claude Code / Codex CLI / GitHub Copilot CLI)、Node.js、自作の zsh 関数は任意である。`chezmoi init` のときに 1 つずつ聞かれ、yes と答えたものだけが入る。
+AI コーディングエージェント (Claude Code / Codex CLI / GitHub Copilot CLI)、Node.js、Rust、自作の zsh 関数は任意である。`chezmoi init` のときに 1 つずつ聞かれ、yes と答えたものだけが入る。
 
 | ドキュメント | 内容 |
 | --- | --- |
@@ -53,9 +57,10 @@ chezmoi apply                                           # 反映する
 | `Codex CLI を入れますか` | no | 公式インストールスクリプトで `~/.local/bin/codex` に入れる |
 | `GitHub Copilot CLI を入れますか` | no | 公式インストールスクリプトで `~/.local/bin/copilot` に入れる |
 | `Node.js を入れますか (fnm でバージョンを管理する)` | no | 既定は LTS の v24 系。`node` `npm` `npx` が入る |
+| `Rust を入れますか (rustup でツールチェインを管理する)` | no | stable のツールチェイン。`cargo` `rustc` `rustup` が入る |
 | `自作の zsh 関数を入れますか (yazi 連携の y など)` | yes | `~/.config/zsh/functions/` に置き、`autoload` で読む |
 
-下の 5 つが任意のセットアップである。既定を no にしてあるのは、どれも本体をネットワークから取ってくるものだからで、明示的に yes と答えたものだけが入る。`自作の zsh 関数` だけは外から何も取ってこないので既定を yes にしてある。
+下の 6 つが任意のセットアップである。既定を no にしてあるのは、どれも本体をネットワークから取ってくるものだからで、明示的に yes と答えたものだけが入る。`自作の zsh 関数` だけは外から何も取ってこないので既定を yes にしてある。
 
 ヘッドレスかどうかの既定値は `DISPLAY` と `WAYLAND_DISPLAY` の有無から決めている。ただし SSH 越しに入ると GUI のマシンでも両方とも空になってしまうので、既定値を示したうえで確認するようにした。ここで yes と答えると、フォント、Ghostty の設定、`fc-cache`、`fontconfig` とターミナルエミュレータの導入を省く。シェルや CLI ツールの中身は変わらない。WSL2 では `DISPLAY` が設定されていてもヘッドレス扱いを既定にする (端末は Windows 側のものを使うため)。
 
@@ -75,7 +80,7 @@ chezmoi apply
 
 これをしないあいだは、増えた項目は「入れない」として扱われる。`chezmoi apply` が失敗することはない。例外は `自作の zsh 関数` で、こちらは答えていないマシンでも入る。既に `y` を使っている環境で、`chezmoi init` をやり直すまで消えてしまうのを避けるためである。
 
-`Node.js` と `ヘッドレス環境ですか` の答えを変えたときは、パッケージ導入スクリプトが一度やり直される (この 2 つが導入するパッケージの一覧を変えるため)。Arch ではそこに `pacman -Syu` が含まれるので、全システム更新が走る ([理由](docs/design.md#arch-の全システム更新))。更新したくない時期なら、切り替えるタイミングを選ぶ。
+`Node.js`、`Rust`、`ヘッドレス環境ですか` の答えを変えたときは、パッケージ導入スクリプトが一度やり直される (この 3 つが導入するパッケージの一覧を変えるため。`Rust` が一覧を変えるのは Linux だけなので、macOS ではやり直されない)。Arch ではそこに `pacman -Syu` が含まれるので、全システム更新が走る ([理由](docs/design.md#arch-の全システム更新))。更新したくない時期なら、切り替えるタイミングを選ぶ。
 
 ### OS ごとの注意
 
@@ -183,11 +188,14 @@ chezmoi cd                # ソースリポジトリへ移動する
 | Codex CLI | `codex`。`codex login` で ChatGPT アカウントか API キーを渡す |
 | GitHub Copilot CLI | `copilot`。起動して `/login` と打つ |
 | Node.js | `fnm` で管理する。既定は LTS の v24 系。`node` `npm` `npx` が入る |
+| Rust | `rustup` で管理する。stable の `cargo` `rustc` が入る。Linux ではリンカのために `build-essential` / `base-devel` も入る |
 | 自作の zsh 関数 | `~/.config/zsh/functions/` の中身。いまは yazi 連携の `y` だけ |
 
 エージェント 3 つは提供元の公式インストールスクリプトで入れている。どれも `~/.local/bin` に入るので sudo が要らず、3 OS で手順が同じになり、更新の経路が本体側に閉じる (`claude` と `codex` は自動、`copilot` は `copilot update` を自分で打つ)。パッケージマネージャを使わなかった理由は [docs/design.md](docs/design.md#ai-エージェントの入れ方) に書いた。認証はどれも対話でしかできないので、セットアップでは行わない。
 
 Node.js のバージョン管理に `nvm` ではなく `fnm` を使っている。非対話シェルから `node` を見つけられるようにするうえで差が出る ([理由](docs/design.md#nodejs-を-fnm-で入れる))。
+
+Rust は公式インストールスクリプトで rustup を入れ、置き場を `~/.rustup` `~/.cargo` ではなく `~/.local/share/{rustup,cargo}` に寄せている ([理由](docs/design.md#rust-を-rustup-で入れる))。
 
 ## 旧構成からの移行
 

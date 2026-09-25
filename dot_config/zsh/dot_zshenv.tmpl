@@ -45,6 +45,19 @@ export XDG_STATE_HOME=${HOME}/.local/state
 # ===============================================
 export FNM_DIR="${XDG_DATA_HOME}/fnm"
 
+{{ end }}{{ if .rust }}# ===============================================
+# rustup / cargo (Rust のツールチェイン管理)
+#
+# 既定の ~/.rustup と ~/.cargo ではなく XDG_DATA_HOME の下に置く。
+# run_after_55-install-rust.sh.tmpl が入れる先と同じ値でなければならない。
+#
+# $CARGO_HOME/bin には rustup が張ったプロキシ (cargo / rustc など) と、
+# cargo install で入れたものが並ぶ。どちらも実体なので、fnm と同じく
+# 非対話シェルからも PATH だけで到達できる。rustup のための初期化は要らない。
+# ===============================================
+export RUSTUP_HOME="${XDG_DATA_HOME}/rustup"
+export CARGO_HOME="${XDG_DATA_HOME}/cargo"
+
 {{ end }}# ===============================================
 # path
 #
@@ -75,6 +88,7 @@ _dotfiles_set_path() {
     path=(
         "${HOME}/.local/bin"
 {{ if .nodejs }}        "${FNM_DIR}/aliases/default/bin"
+{{ end }}{{ if .rust }}        "${CARGO_HOME}/bin"
 {{ end }}        /usr/local/sbin
         $path
         "${XDG_DATA_HOME}/dotfiles/bin"

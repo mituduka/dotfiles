@@ -7,6 +7,7 @@
 - [git 関連](#git-関連)
 - [Python (uv)](#python-uv)
 - [Node.js (fnm)](#nodejs-fnm)
+- [Rust (rustup)](#rust-rustup)
 - [AI コーディングエージェント](#ai-コーディングエージェント)
 
 ## 従来コマンドの置き換え
@@ -409,6 +410,55 @@ rm -f ~/.local/share/dotfiles/bin/fnm     # fnm 本体 (Linux で externals か�
 
 ```sh
 npm ls -g --depth=0
+```
+
+## Rust (rustup)
+
+任意のセットアップなので、`chezmoi init` で「Rust を入れますか」に yes と答えたときだけ入る。ツールチェインの管理には rustup を使う。既定は stable である。
+
+```sh
+cargo --version
+rustc --version
+rustup show                  # 入っているツールチェインと既定
+rustup update                # rustup 自身とツールチェインを更新する
+```
+
+ツールチェインやコンポーネントを足す。
+
+```sh
+rustup toolchain install nightly
+rustup default nightly       # 既定を変える
+rustup component add rust-analyzer
+rustup target add wasm32-unknown-unknown
+```
+
+プロジェクトごとに版を決めたいときは `rust-toolchain.toml` を置く。そのディレクトリの中では `cargo` がそこに書いた版で動く。
+
+```toml
+[toolchain]
+channel = "1.90"
+```
+
+`cargo install` で入れたコマンドは `~/.local/share/cargo/bin` に入り、そのまま PATH が通っている。
+
+```sh
+cargo install cargo-edit
+cargo install --list         # 入れたものの一覧
+```
+
+`chezmoi edit-config` で `rust` を `false` に戻しても、入れたものは消えない。chezmoi は管理から外れたものを消さないためである。ツールチェインは 1 GB 前後あるので、要らなくなったら手で片付ける。
+
+```sh
+rm -rf ~/.local/share/rustup ~/.local/share/cargo   # rustup とツールチェイン、cargo install したもの一式
+```
+
+`rustup self uninstall` は使わない。`false` で apply したあとのシェルには `RUSTUP_HOME` と `CARGO_HOME` が無いので、rustup は既定の `~/.rustup` と `~/.cargo` を探しにいき、「入っていない」と言って何も消さない。
+
+以前から `~/.rustup` と `~/.cargo` で rustup を使っていたマシンでは、このセットアップが新しい置き場にツールチェインを入れ直す。古いほうはそのまま残るので、`cargo install` で入れていたものを控えてから片付ける。`~/.profile` や `~/.bashrc` に rustup が書き足した `. "$HOME/.cargo/env"` の行も消しておく。
+
+```sh
+CARGO_HOME=~/.cargo cargo install --list    # 古い置き場で入れていたもの
+rm -rf ~/.rustup ~/.cargo
 ```
 
 ## AI コーディングエージェント

@@ -93,6 +93,7 @@ eval "$(/opt/homebrew/bin/brew shellenv)"
 | `.name` / `.email` | 初回プロンプトで入力した git の設定 |
 | `.claudeCode` / `.codexCli` / `.copilotCli` | AI エージェントを入れるかどうか |
 | `.nodejs` | Node.js を入れるかどうか |
+| `.rust` | Rust を入れるかどうか |
 | `.zshFunctions` | 自作の zsh 関数を入れるかどうか |
 
 `.chezmoi.os` と `.chezmoi.arch` 以外は `.chezmoi.toml.tmpl` が作り、`~/.config/chezmoi/chezmoi.toml` に保存されている。値を変えるときは `chezmoi edit-config` で書き換えてから `chezmoi apply` する。
@@ -153,7 +154,7 @@ something = false
 
 既定値は `.chezmoidata.toml` に置いてある。`chezmoi.toml` の `[data]` のほうが優先されるので、ここの値が効くのは「まだ答えていないマシン」だけである。この既定値が無いと、任意項目を増やすたびに、まだ `chezmoi init` をやり直していないマシンで `apply` が落ちる。
 
-いま任意になっているのは AI エージェント 3 つ、Node.js、自作の zsh 関数の 5 つである。それぞれ何をしているかは README の[任意で入るもの](../README.md#任意で入るもの)を見てほしい。
+いま任意になっているのは AI エージェント 3 つ、Node.js、Rust、自作の zsh 関数の 6 つである。それぞれ何をしているかは README の[任意で入るもの](../README.md#任意で入るもの)を見てほしい。
 
 ### 後片付けは自動では行われない
 
@@ -162,6 +163,7 @@ something = false
 | 戻した項目 | 残るもの |
 | --- | --- |
 | `nodejs` | `~/.local/share/fnm` (Node の実体を含むので数百 MB)、`~/.local/share/dotfiles/bin/fnm` |
+| `rust` | `~/.local/share/rustup` (ツールチェインを含むので 1 GB 前後)、`~/.local/share/cargo`、`build-essential` / `base-devel` (Linux)。`rustup self uninstall` では消えない ([commands.md](commands.md#rust-rustup)) |
 | `zshFunctions` | `~/.config/zsh/functions/` |
 | `headless` を yes にした | `~/.config/ghostty/config`、`~/Library/Fonts/HackGenConsoleNF` (Linux は `~/.local/share/fonts/HackGenConsoleNF`) |
 | AI エージェント | `~/.local/bin/{claude,codex,copilot}` とその配下のデータ |
@@ -245,7 +247,7 @@ curl -fsSL <url> | shasum -a 256
 
 chezmoi が「実行済み」として記録するのは、終了コード 0 で終えたスクリプトだけである。素直に非ゼロで終えるなら `run_once_` でも次の `apply` で再試行される。問題になるのは、失敗を自分で握り潰して 0 を返すスクリプトのほうである。`apply` 全体を道連れにしないためにそう書くのだが、その「失敗したが 0 で終えた回」が実行済みとして記録され、以後どれだけ `apply` しても再試行されない。
 
-到達したい状態がはっきりしているもの (ログインシェルが zsh になっている、`node` が入っている、`claude` が入っている) は `run_` にして、毎回そこに到達しているかを確かめるほうがよい。`20-setup-shell` `25-migrate-local-bin` `50-install-node` `60-install-ai-agents` がその形をしている。
+到達したい状態がはっきりしているもの (ログインシェルが zsh になっている、`node` が入っている、`claude` が入っている) は `run_` にして、毎回そこに到達しているかを確かめるほうがよい。`20-setup-shell` `25-migrate-local-bin` `50-install-node` `55-install-rust` `60-install-ai-agents` がその形をしている。
 
 そのぶん、到達済みのときに何もせずすぐ抜けるように書く必要がある。`command -v` を数回呼ぶ程度で済ませ、ネットワークには触らない。
 
@@ -255,7 +257,7 @@ chezmoi が「実行済み」として記録するのは、終了コード 0 で
 chezmoi diff --exclude=scripts
 ```
 
-テンプレートが空文字列に展開されたスクリプトは実行されない。特定の OS でだけ走らせたいときは、この性質を使ってスクリプト全体を `{{ if ... }}` で包む。`40-font-cache` と `50-install-node` がその書き方をしている。
+テンプレートが空文字列に展開されたスクリプトは実行されない。特定の OS でだけ走らせたいときは、この性質を使ってスクリプト全体を `{{ if ... }}` で包む。`40-font-cache`、`50-install-node`、`55-install-rust` がその書き方をしている。
 
 `run_once_` が「実行済みかどうか」を判断する材料は、テンプレートを展開したあとの内容のハッシュである。中身が変われば、もう一度実行される。逆に、内容を変えないまま実行させたいときは、記録のほうを消す。
 

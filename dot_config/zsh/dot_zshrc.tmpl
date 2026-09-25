@@ -28,7 +28,7 @@ fi
 if [[ -x /opt/homebrew/bin/brew ]]; then
   eval "$(/opt/homebrew/bin/brew shellenv)"
   # brew shellenv は /opt/homebrew/bin を PATH の先頭に差し込む。そのままだと
-  # ~/.local/bin や fnm の既定版より前に出てしまうので、.zshenv が決めた順序に
+  # ~/.local/bin や fnm の既定版、$CARGO_HOME/bin より前に出てしまうので、.zshenv が決めた順序に
   # 戻す (関数の定義は $ZDOTDIR/.zshenv を参照)。
   (( $+functions[_dotfiles_set_path] )) && _dotfiles_set_path
 fi

@@ -17,4 +17,5 @@ claudeCode = false
 codexCli = false
 copilotCli = false
 nodejs = false
+rust = false
 zshFunctions = true

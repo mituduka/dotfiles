@@ -13,6 +13,7 @@
 - [古いディストリでも動く形で配る](#古いディストリでも動く形で配る)
 - [AI エージェントの入れ方](#ai-エージェントの入れ方)
 - [Node.js を fnm で入れる](#nodejs-を-fnm-で入れる)
+- [Rust を rustup で入れる](#rust-を-rustup-で入れる)
 - [Ghostty の Option + 矢印](#ghostty-の-option--矢印)
 - [tmux の status-interval を 1 にしない](#tmux-の-status-interval-を-1-にしない)
 - [re-add と merge が使えない](#re-add-と-merge-が使えない)
@@ -27,10 +28,11 @@
 | --- | --- | --- |
 | `~/.local/bin` | 前 | 自分のスクリプト、`chezmoi` 本体、AI エージェント、Debian 系の改名リンク |
 | `$FNM_DIR/aliases/default/bin` | 前寄り | fnm の既定版の `node` / `npm` (入れた場合のみ) |
+| `$CARGO_HOME/bin` | 前寄り | rustup のプロキシ (`cargo` / `rustc` など) と `cargo install` で入れたもの (入れた場合のみ) |
 | `/usr/bin` など | 中 | apt / pacman / Homebrew が入れたもの |
 | `~/.local/share/dotfiles/bin` | 後 | GitHub Releases から取ったバイナリ (Linux のみ) |
 
-fnm の `node` だけは「Releases 由来のものは末尾」という下の原則から外れて、システムのディレクトリより前に置いている。Homebrew や apt の `node` がいても、バージョンを管理しているほうを使いたいからである。fnm 本体のバイナリは原則どおり末尾の `dotfiles/bin` にある。
+fnm の `node` と rustup の `cargo` は「Releases 由来のものは末尾」という下の原則から外れて、システムのディレクトリより前に置いている。Homebrew や apt の `node` / `cargo` がいても、バージョンを管理しているほうを使いたいからである。fnm 本体のバイナリは原則どおり末尾の `dotfiles/bin` にある。
 
 `~/.local/bin` のほうがさらに前にあるので、そこに `node` を置くと fnm 版より先に見つかる。Node の公式インストーラや `n` を併用しているとこれが起きるため、Node を入れた回にその旨を知らせるようにしてある。
 
@@ -213,6 +215,26 @@ nvm には相当するものが標準では無い。`$NVM_DIR/alias/default` は
 なお、Homebrew や apt で入れた `node` が残っていても実害は無い。システムのディレクトリより前に fnm 版が入るので、`.zshenv` と `.zshrc` のどちらの経路でも先に見つかる。例外は `~/.local/bin/node` で、こちらは fnm 版よりさらに前にあるため勝ってしまう ([ファイルの置き場と PATH の順序](#ファイルの置き場と-path-の順序))。
 
 いずれの場合も「入れたはずの版と `node -v` が食い違う」と悩みやすいので、Node を入れた回に 1 度だけ知らせるようにしてある。ただし古いほうを消しはしない。Homebrew の `node` を外すと、そこに `npm -g` で入れたものまで一緒に消えるためである。
+
+## Rust を rustup で入れる
+
+Rust は rustup で入れている。[rust-lang.org のインストール手順](https://www.rust-lang.org/tools/install)が案内しているのもこれで、ツールチェインの版を切り替えたり、`rustfmt` や `clippy`、クロスコンパイル用のターゲットを足したりするのは rustup の役目である。apt や pacman の `rustc` は版がディストリの都合で決まり、Ubuntu 22.04 ではだいぶ古い。
+
+rustup 自体の入れ方には、AI エージェントと同じく公式インストールスクリプト (`sh.rustup.rs`) を選んだ。Homebrew と pacman には `rustup` があるが、apt に入ったのは Ubuntu 24.04 からで 22.04 には無い。スクリプトなら 3 OS で手順が同じになり、sudo も要らない。rustup 自身の更新も `rustup update` がツールチェインと一緒に済ませる。
+
+置き場は `RUSTUP_HOME` と `CARGO_HOME` で `~/.local/share/rustup` と `~/.local/share/cargo` に寄せている。既定の `~/.rustup` と `~/.cargo` はホーム直下を 2 つ汚すためである。この 2 つは `.zshenv` とインストールスクリプトで同じ値でなければならず、どちらも継承した `XDG_DATA_HOME` に左右されない形で固定してある (fnm の `FNM_DIR` と同じ理由)。
+
+インストーラには `--no-modify-path` を必ず渡す。既定では `~/.profile` や `~/.zshenv` などに `. "$CARGO_HOME/env"` を書き足すが、`~/.zshenv` は chezmoi が管理しているファイルである。PATH は `$ZDOTDIR/.zshenv` が通す。
+
+`$CARGO_HOME/bin` に並ぶ `cargo` や `rustc` はシェル関数ではなく実体 (rustup のプロキシ) なので、fnm と同じく PATH に入れるだけで非対話シェルからも使える。`.zshrc` で初期化するものは無い。
+
+ただし、この 2 つの環境変数を設定しているのは zsh の `.zshenv` だけである。bash や、zsh を通らずに起動したもの (GUI アプリ、systemd のサービス、cron) から `~/.local/share/cargo/bin/cargo` を直接呼ぶと、rustup は既定の `~/.rustup` を見にいき、ツールチェインが無いと言って失敗する。そういう経路から使うときは `RUSTUP_HOME` と `CARGO_HOME` を自分で渡す。
+
+インストールスクリプトが到達済みかを判定するときは、素の `cargo --version` ではなく `rustup default` で既定の版の名前を取り、`rustup run <版> cargo --version` で確かめている。`cargo` は作業ディレクトリの `rust-toolchain.toml` や `RUSTUP_TOOLCHAIN` に従うので、そこに入っていない版が書いてあると判定が毎回失敗するためである。既定を stable に決め打ちしないのは、自分で nightly などに切り替えたマシンで、その選択を apply が上書きしないようにするためである。
+
+以前から `~/.rustup` と `~/.cargo` で rustup を使っていたマシンでは、新しい置き場にツールチェインが入り直し、古いほうは残る。移すのではなく入れ直すのは、`~/.cargo/bin` のプロキシや `cargo install` で入れたものが古い置き場を前提にしている場合があり、ディレクトリを動かすだけでは動く保証が無いからである。片付け方は [commands.md](commands.md#rust-rustup) に書いた。
+
+rustc はリンクを自分でせず `cc` を呼ぶ。Linux では Rust を入れる選択をしたときに `build-essential` (Debian 系) か `base-devel` (Arch) も入れる。macOS では Homebrew を入れた時点で Command Line Tools が入っている。macOS の `/usr/bin/cc` は Command Line Tools が無くても存在する中継用のコマンドなので、無いことを知らせる判定には `command -v cc` ではなく `xcode-select -p` を使っている。
 
 ## Ghostty の Option + 矢印
 

@@ -146,6 +146,8 @@ fd:fd-find:fd
 {{/* file(1) は yazi が MIME 判定に使う唯一の必須依存。最小構成のコンテナには無い。 */}}file:file:file
 {{ if .nodejs }}{{/* fnm は Node.js のバージョン管理。apt には無いので externals が補う。 */}}fnm:-:fnm
 {{ end -}}
+{{ if .rust }}{{/* rustc はリンクに cc を呼ぶ。rustup 本体は run_after_55 が入れる。 */}}cc:build-essential:base-devel
+{{ end -}}
 {{ if not .headless }}fontconfig:fontconfig:fontconfig
 {{ end -}}
 fzf:fzf:fzf

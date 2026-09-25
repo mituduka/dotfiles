@@ -64,6 +64,7 @@
 {{- $codexCli := promptBoolOnce . "codexCli" "Codex CLI を入れますか" false -}}
 {{- $copilotCli := promptBoolOnce . "copilotCli" "GitHub Copilot CLI を入れますか" false -}}
 {{- $nodejs := promptBoolOnce . "nodejs" "Node.js を入れますか (fnm でバージョンを管理する)" false -}}
+{{- $rust := promptBoolOnce . "rust" "Rust を入れますか (rustup でツールチェインを管理する)" false -}}
 {{- $zshFunctions := promptBoolOnce . "zshFunctions" "自作の zsh 関数を入れますか (yazi 連携の y など)" true -}}
 
 [data]
@@ -74,4 +75,5 @@
     codexCli = {{ $codexCli }}
     copilotCli = {{ $copilotCli }}
     nodejs = {{ $nodejs }}
+    rust = {{ $rust }}
     zshFunctions = {{ $zshFunctions }}
