@@ -13,6 +13,10 @@
 
 "$schema" = 'https://starship.rs/config-schema.json'
 
+# VM の起動直後などはディスク IO が一時的に遅れ、既定の 30ms ではディレクトリの
+# 走査が間に合わずに警告が出ることがあるので延ばしている。
+scan_timeout = 100
+
 format = """
 [](color_orange)\
 $os\
