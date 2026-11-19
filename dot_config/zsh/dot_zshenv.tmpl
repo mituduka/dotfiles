@@ -89,7 +89,8 @@ _dotfiles_set_path() {
         "${HOME}/.local/bin"
 {{ if .nodejs }}        "${FNM_DIR}/aliases/default/bin"
 {{ end }}{{ if .rust }}        "${CARGO_HOME}/bin"
-{{ end }}        /usr/local/sbin
+{{ end }}        "${XDG_DATA_HOME}/dotfiles/go/current/bin"
+        /usr/local/sbin
         $path
         "${XDG_DATA_HOME}/dotfiles/bin"
     )

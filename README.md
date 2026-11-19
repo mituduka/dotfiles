@@ -177,6 +177,7 @@ chezmoi cd                # ソースリポジトリへ移動する
 | tmux | prefix は `Ctrl-j`。キーバインドは [docs/tmux.md](docs/tmux.md) |
 | Claude Code Skills | 日本語ライティング用の 2 つを `~/.claude/skills/` に配置。Gist のリビジョンで固定してあり、更新は手動 ([手順](docs/chezmoi.md#外部アセットの更新)) |
 | Python | `uv` に一本化している。pyenv や venv は使わない |
+| Go | `chezmoi apply` のたびに公式の最新版（安定版）を確認し、必要に応じて `~/.local/share/dotfiles/go` に導入する |
 
 ### 任意で入るもの
 

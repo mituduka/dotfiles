@@ -1,0 +1,74 @@
+#!/bin/sh
+set -eu
+
+go_home="$HOME/.local/share/dotfiles/go"
+os='{{ .chezmoi.os }}'
+arch='{{ .chezmoi.arch }}'
+
+case "$os/$arch" in
+    darwin/arm64) PATH="/opt/homebrew/bin:$PATH" ;;
+    linux/amd64|linux/arm64) ;;
+    *) exit 0 ;;
+esac
+
+unset GOROOT
+export GOTOOLCHAIN=local
+
+install_go() (
+    set -e
+
+    releases="$(curl --proto '=https' -fsSL 'https://go.dev/dl/?mode=json')"
+    release="$(printf '%s\n' "$releases" | jq -er --arg os "$os" --arg arch "$arch" '
+        first(.[] | select(.stable == true)) as $release |
+        $release.files[] |
+        select(.kind == "archive" and .os == $os and .arch == $arch) |
+        select(.filename == ($release.version + "." + $os + "-" + $arch + ".tar.gz")) |
+        [$release.version, .filename, .sha256] | join(" ")
+    ')"
+    read -r version filename checksum <<EOF_RELEASE
+$release
+EOF_RELEASE
+
+    active="$(readlink "$go_home/current" 2>/dev/null || true)"
+    if [ -x "$go_home/current/bin/go" ] &&
+        [ "$(cat "$go_home/current/VERSION" | head -n 1)" = "$version" ]; then
+        exit 0
+    fi
+
+    mkdir -p "$go_home"
+    staging="$(mktemp -d "$go_home/toolchain.XXXXXX")"
+    trap 'if [ "$(readlink "$go_home/current" 2>/dev/null)" != "${staging##*/}" ]; then rm -rf "$staging"; fi' EXIT
+    trap 'exit 1' HUP INT TERM
+
+    archive="$staging/$filename"
+    curl --proto '=https' -fsSL "https://go.dev/dl/$filename" -o "$archive"
+    case "$os" in
+        darwin) printf '%s  %s\n' "$checksum" "$archive" | shasum -a 256 -c >/dev/null ;;
+        linux) printf '%s  %s\n' "$checksum" "$archive" | sha256sum -c >/dev/null ;;
+    esac
+    tar -xzf "$archive" --strip-components 1 -C "$staging"
+    rm "$archive"
+    "$staging/bin/go" version >/dev/null
+
+    # 検証が済んでから、PATH が参照するリンクを差し替える。
+    ln -s "${staging##*/}" "$staging/current"
+    case "$os" in
+        darwin) mv -fh "$staging/current" "$go_home/current" ;;
+        linux) mv -fT "$staging/current" "$go_home/current" ;;
+    esac
+    trap - EXIT
+
+    case "$active" in
+        */*) ;;
+        toolchain.??????) rm -rf "$go_home/$active" ;;
+    esac
+    printf '==> Go %s を導入しました。\n' "${version#go}"
+)
+
+# サブシェルを if の条件に置くと set -e が無効になるため、終了コードを別に受け取る。
+set +e
+install_go
+status=$?
+if [ "$status" -ne 0 ]; then
+    printf '==> Go の導入・更新に失敗しました。次の chezmoi apply で再試行します。\n' >&2
+fi
